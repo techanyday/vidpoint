@@ -16,11 +16,15 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-app.secret_key = os.getenv("FLASK_SECRET_KEY", "your-secret-key")  # Change in production
-
-# Configuration
+app.config['SECRET_KEY'] = os.environ.get('FLASK_SECRET_KEY')
 app.config['GOOGLE_CLIENT_ID'] = os.environ.get('GOOGLE_CLIENT_ID')
 app.config['GOOGLE_CLIENT_SECRET'] = os.environ.get('GOOGLE_CLIENT_SECRET')
+app.config['HUBTEL_CLIENT_ID'] = os.environ.get('HUBTEL_CLIENT_ID')
+app.config['HUBTEL_CLIENT_SECRET'] = os.environ.get('HUBTEL_CLIENT_SECRET')
+app.config['HUBTEL_MERCHANT_ID'] = os.environ.get('HUBTEL_MERCHANT_ID')
+app.config['FLW_PUBLIC_KEY'] = os.environ.get('FLW_PUBLIC_KEY')
+app.config['FLW_SECRET_KEY'] = os.environ.get('FLW_SECRET_KEY')
+app.config['FLW_WEBHOOK_HASH'] = os.environ.get('FLW_WEBHOOK_HASH')
 app.config['PAYSTACK_SECRET_KEY'] = os.environ.get('PAYSTACK_SECRET_KEY')
 app.config['PAYSTACK_PUBLIC_KEY'] = os.environ.get('PAYSTACK_PUBLIC_KEY')
 

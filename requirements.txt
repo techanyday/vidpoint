@@ -10,7 +10,6 @@ PyJWT==2.8.0
 Werkzeug==3.0.1
 gunicorn==21.2.0
 python-multipart==0.0.6
-requests==2.31.0
 Pillow==10.1.0
 
 # Google OAuth
@@ -19,4 +18,5 @@ google-auth==2.23.0
 google-auth-oauthlib==1.1.0
 
 # Payment Processing
-paystackapi==2.0.0
+hubtel-payment==1.0.1
+requests==2.31.0

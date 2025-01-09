@@ -1,12 +1,18 @@
 from flask import jsonify, request, current_app, url_for, session, redirect
 from . import payments
 from models.user import User
-from paystackapi.paystack import Paystack
-from paystackapi.transaction import Transaction
+import requests
 import os
 from datetime import datetime, timedelta
+import json
+import hmac
+import hashlib
 
-paystack = Paystack(secret_key=os.environ.get('PAYSTACK_SECRET_KEY'))
+# Hubtel API configuration
+HUBTEL_API_BASE = "https://api.hubtel.com/v2/pos"
+HUBTEL_CLIENT_ID = os.environ.get('HUBTEL_CLIENT_ID')
+HUBTEL_CLIENT_SECRET = os.environ.get('HUBTEL_CLIENT_SECRET')
+HUBTEL_MERCHANT_ID = os.environ.get('HUBTEL_MERCHANT_ID')
 
 PLAN_PRICES = {
     'starter': {
@@ -29,6 +35,16 @@ PLAN_PRICES = {
     }
 }
 
+def generate_signature(data, secret):
+    """Generate HMAC signature for Hubtel webhook verification"""
+    message = json.dumps(data, sort_keys=True)
+    signature = hmac.new(
+        secret.encode(),
+        message.encode(),
+        hashlib.sha512
+    ).hexdigest()
+    return signature
+
 @payments.route('/initialize-payment', methods=['POST'])
 def initialize_payment():
     if 'user_id' not in session:
@@ -44,26 +60,52 @@ def initialize_payment():
 
     plan = PLAN_PRICES[plan_id]
     
-    # Initialize transaction with Paystack
+    # Initialize transaction with Hubtel
     try:
-        response = Transaction.initialize(
-            reference=f"vidpoint_{user.id}_{datetime.utcnow().timestamp()}",
-            email=user.email,
-            amount=plan['amount'] * 100,  # Convert to pesewas
-            callback_url=url_for('payments.verify_payment', _external=True)
+        invoice_id = f"vidpoint_{user.id}_{datetime.utcnow().timestamp()}"
+        
+        headers = {
+            "Authorization": f"Basic {HUBTEL_CLIENT_ID}:{HUBTEL_CLIENT_SECRET}",
+            "Content-Type": "application/json"
+        }
+        
+        payload = {
+            "invoice": {
+                "items": [{
+                    "name": f"VidPoint {plan_id.title()} Plan",
+                    "quantity": 1,
+                    "unitPrice": plan['amount'] / 100,  # Convert from cents to GHS
+                    "totalAmount": plan['amount'] / 100
+                }],
+                "totalAmount": plan['amount'] / 100,
+                "description": f"Payment for VidPoint {plan_id.title()} Plan",
+                "callbackUrl": url_for('payments.verify_payment', _external=True),
+                "returnUrl": url_for('index', _external=True),
+                "merchantAccountNumber": HUBTEL_MERCHANT_ID,
+                "cancellationUrl": url_for('index', _external=True),
+                "clientReference": invoice_id
+            }
+        }
+        
+        response = requests.post(
+            f"{HUBTEL_API_BASE}/invoice/create",
+            headers=headers,
+            json=payload
         )
         
-        if response['status']:
+        if response.status_code == 200:
+            data = response.json()
+            
             # Store transaction details in session
             session['pending_transaction'] = {
-                'reference': response['data']['reference'],
+                'invoice_id': invoice_id,
                 'plan_id': plan_id,
                 'amount': plan['amount']
             }
             
             return jsonify({
                 'status': 'success',
-                'authorization_url': response['data']['authorization_url']
+                'checkout_url': data['data']['checkoutUrl']
             })
         
         return jsonify({'error': 'Failed to initialize payment'}), 400
@@ -73,40 +115,95 @@ def initialize_payment():
 
 @payments.route('/verify-payment')
 def verify_payment():
-    reference = request.args.get('reference')
-    if not reference:
-        return jsonify({'error': 'No reference provided'}), 400
+    invoice_id = request.args.get('clientReference')
+    status = request.args.get('status')
+    
+    if not invoice_id:
+        return jsonify({'error': 'Invalid transaction parameters'}), 400
 
     try:
-        response = Transaction.verify(reference=reference)
+        # Verify the transaction with Hubtel
+        headers = {
+            "Authorization": f"Basic {HUBTEL_CLIENT_ID}:{HUBTEL_CLIENT_SECRET}",
+            "Content-Type": "application/json"
+        }
         
-        if response['status'] and response['data']['status'] == 'success':
-            # Get the stored transaction details
-            pending_transaction = session.get('pending_transaction')
-            if not pending_transaction or pending_transaction['reference'] != reference:
-                return jsonify({'error': 'Invalid transaction'}), 400
+        response = requests.get(
+            f"{HUBTEL_API_BASE}/invoice/status/{invoice_id}",
+            headers=headers
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            
+            if data['data']['status'] == 'paid':
+                # Get the stored transaction details
+                pending_transaction = session.get('pending_transaction')
+                if not pending_transaction or pending_transaction['invoice_id'] != invoice_id:
+                    return jsonify({'error': 'Invalid transaction'}), 400
 
-            user = User.get_by_id(session['user_id'])
+                user = User.get_by_id(session['user_id'])
+                if not user:
+                    return jsonify({'error': 'User not found'}), 404
+
+                plan_id = pending_transaction['plan_id']
+                plan = PLAN_PRICES[plan_id]
+
+                # Update user's subscription or credits
+                if plan_id in ['starter', 'pro']:
+                    end_date = datetime.utcnow() + timedelta(days=plan['duration'])
+                    user.update_subscription(plan_id, end_date)
+                else:  # Credits purchase
+                    user.add_summaries(plan['summaries'])
+
+                # Clear the pending transaction
+                session.pop('pending_transaction', None)
+
+                return redirect(url_for('index', payment_status='success'))
+        
+        return redirect(url_for('index', payment_status='failed'))
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@payments.route('/webhook', methods=['POST'])
+def handle_webhook():
+    """Handle Hubtel webhook notifications"""
+    signature = request.headers.get('X-Hubtel-Signature')
+    if not signature:
+        return jsonify({'error': 'Missing signature'}), 401
+        
+    try:
+        payload = request.get_json()
+        
+        # Verify webhook signature
+        expected_signature = generate_signature(payload, HUBTEL_CLIENT_SECRET)
+        if signature != expected_signature:
+            return jsonify({'error': 'Invalid signature'}), 401
+        
+        if payload['status'] == 'paid':
+            invoice_id = payload['clientReference']
+            
+            # Get transaction details from database or cache
+            # Here we'll need to implement a way to store pending transactions
+            # in the database instead of relying on session
+            
+            user = User.get_by_id(payload['metadata']['user_id'])
             if not user:
                 return jsonify({'error': 'User not found'}), 404
-
-            plan_id = pending_transaction['plan_id']
+                
+            plan_id = payload['metadata']['plan_id']
             plan = PLAN_PRICES[plan_id]
-
+            
             # Update user's subscription or credits
             if plan_id in ['starter', 'pro']:
                 end_date = datetime.utcnow() + timedelta(days=plan['duration'])
                 user.update_subscription(plan_id, end_date)
             else:  # Credits purchase
                 user.add_summaries(plan['summaries'])
-
-            # Clear the pending transaction
-            session.pop('pending_transaction', None)
-
-            return redirect(url_for('index', payment_status='success'))
+                
+        return jsonify({'status': 'success'}), 200
         
-        return redirect(url_for('index', payment_status='failed'))
-
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -118,12 +215,26 @@ def get_payment_methods():
             {
                 'id': 'card',
                 'name': 'Credit/Debit Card',
-                'description': 'Pay with Visa, Mastercard, or Verve'
+                'description': 'Pay with Visa or Mastercard'
             },
             {
                 'id': 'momo',
                 'name': 'Mobile Money',
-                'description': 'Pay with MTN Mobile Money, Vodafone Cash, or AirtelTigo Money'
+                'description': 'Pay with Mobile Money',
+                'providers': [
+                    {
+                        'id': 'mtn',
+                        'name': 'MTN Mobile Money'
+                    },
+                    {
+                        'id': 'vodafone',
+                        'name': 'Vodafone Cash'
+                    },
+                    {
+                        'id': 'tigo',
+                        'name': 'AirtelTigo Money'
+                    }
+                ]
             }
         ]
     })
