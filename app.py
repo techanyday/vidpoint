@@ -8,6 +8,7 @@ import os
 import logging
 from datetime import datetime
 from functools import wraps
+from auth import auth
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -15,6 +16,24 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "your-secret-key")  # Change in production
+
+# Configuration
+app.config['GOOGLE_CLIENT_ID'] = os.environ.get('GOOGLE_CLIENT_ID')
+app.config['GOOGLE_CLIENT_SECRET'] = os.environ.get('GOOGLE_CLIENT_SECRET')
+
+# Register blueprints
+app.register_blueprint(auth, url_prefix='/auth')
+
+@app.context_processor
+def inject_user():
+    return {
+        'current_user': {
+            'is_authenticated': 'user_id' in session,
+            'name': session.get('user_name'),
+            'email': session.get('user_email'),
+            'picture': session.get('picture')
+        }
+    }
 
 # Initialize database and video processor
 db = Database()

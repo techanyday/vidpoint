@@ -1,77 +1,106 @@
-"""User model and management for VidPoint."""
-from datetime import datetime, timezone
-from typing import Optional, Dict
-import jwt
-from werkzeug.security import generate_password_hash, check_password_hash
-from config.pricing import PRICING_PLANS
+from datetime import datetime
+from .database import Database
 
 class User:
-    def __init__(self, email: str, password: str, plan: str = "free"):
+    def __init__(self, id=None, email=None, name=None, google_id=None, profile_picture=None,
+                 subscription_plan='free', subscription_end=None, summaries_remaining=3,
+                 created_at=None, updated_at=None):
+        self.id = id
         self.email = email
-        self.password_hash = generate_password_hash(password)
-        self.plan = plan
-        self.summaries_used = 0
-        self.extra_credits = 0
-        self.last_reset = datetime.now(timezone.utc)
-        self.team_members = [] if plan == "pro" else None
-        
-    def check_password(self, password: str) -> bool:
-        """Check if the provided password matches the hash."""
-        return check_password_hash(self.password_hash, password)
-    
-    def can_process_video(self) -> tuple[bool, str]:
-        """Check if user can process another video."""
-        # Reset counter if it's a new month
-        now = datetime.now(timezone.utc)
-        if now.month != self.last_reset.month or now.year != self.last_reset.year:
-            self.summaries_used = 0
-            self.last_reset = now
-        
-        # Get plan limits
-        plan_info = PRICING_PLANS[self.plan]
-        total_available = plan_info["monthly_summaries"] + self.extra_credits
-        
-        if self.summaries_used >= total_available:
-            return False, f"Monthly limit reached ({total_available} summaries). Please upgrade your plan or purchase extra credits."
-            
-        return True, ""
-    
-    def process_video(self) -> None:
-        """Record a video processing usage."""
-        self.summaries_used += 1
-    
-    def add_credits(self, amount: int) -> None:
-        """Add extra processing credits."""
-        self.extra_credits += amount
-    
-    def get_token(self, secret_key: str) -> str:
-        """Generate a JWT token for the user."""
-        return jwt.encode(
-            {
-                "email": self.email,
-                "plan": self.plan,
-                "exp": datetime.now(timezone.utc).timestamp() + 86400  # 24 hours
-            },
-            secret_key,
-            algorithm="HS256"
+        self.name = name
+        self.google_id = google_id
+        self.profile_picture = profile_picture
+        self.subscription_plan = subscription_plan
+        self.subscription_end = subscription_end
+        self.summaries_remaining = summaries_remaining
+        self.created_at = created_at or datetime.utcnow()
+        self.updated_at = updated_at or datetime.utcnow()
+        self._db = Database()
+
+    @classmethod
+    def get_by_email(cls, email):
+        db = Database()
+        user_data = db.find_one('users', {'email': email})
+        if user_data:
+            return cls(**user_data)
+        return None
+
+    @classmethod
+    def get_by_id(cls, user_id):
+        db = Database()
+        user_data = db.find_one('users', {'_id': user_id})
+        if user_data:
+            return cls(**user_data)
+        return None
+
+    @classmethod
+    def create(cls, email, name=None, google_id=None, profile_picture=None):
+        user = cls(
+            email=email,
+            name=name,
+            google_id=google_id,
+            profile_picture=profile_picture
         )
-    
-    @staticmethod
-    def verify_token(token: str, secret_key: str) -> Optional[Dict]:
-        """Verify a JWT token and return the payload."""
-        try:
-            return jwt.decode(token, secret_key, algorithms=["HS256"])
-        except jwt.InvalidTokenError:
-            return None
-    
-    def to_dict(self) -> Dict:
-        """Convert user to dictionary for storage."""
-        return {
-            "email": self.email,
-            "password_hash": self.password_hash,
-            "plan": self.plan,
-            "summaries_used": self.summaries_used,
-            "extra_credits": self.extra_credits,
-            "last_reset": self.last_reset.isoformat(),
-            "team_members": self.team_members
+        user.save()
+        return user
+
+    def save(self):
+        self.updated_at = datetime.utcnow()
+        user_data = {
+            'email': self.email,
+            'name': self.name,
+            'google_id': self.google_id,
+            'profile_picture': self.profile_picture,
+            'subscription_plan': self.subscription_plan,
+            'subscription_end': self.subscription_end,
+            'summaries_remaining': self.summaries_remaining,
+            'created_at': self.created_at,
+            'updated_at': self.updated_at
         }
+        
+        if self.id:
+            self._db.update_one('users', {'_id': self.id}, user_data)
+        else:
+            self.id = self._db.insert_one('users', user_data)
+
+    def update(self, **kwargs):
+        for key, value in kwargs.items():
+            if hasattr(self, key):
+                setattr(self, key, value)
+        self.save()
+
+    def can_process_video(self):
+        """Check if user can process a new video based on their subscription"""
+        if self.summaries_remaining <= 0:
+            return False
+        if self.subscription_end and datetime.utcnow() > self.subscription_end:
+            return False
+        return True
+
+    def decrement_summaries(self):
+        """Decrement the number of remaining summaries"""
+        if self.summaries_remaining > 0:
+            self.summaries_remaining -= 1
+            self.save()
+            return True
+        return False
+
+    def add_summaries(self, amount):
+        """Add more summaries to the user's account"""
+        self.summaries_remaining += amount
+        self.save()
+
+    def update_subscription(self, plan, end_date=None):
+        """Update user's subscription plan and end date"""
+        self.subscription_plan = plan
+        self.subscription_end = end_date
+        
+        # Reset summaries based on plan
+        if plan == 'free':
+            self.summaries_remaining = 3
+        elif plan == 'starter':
+            self.summaries_remaining = 50
+        elif plan == 'pro':
+            self.summaries_remaining = 1000
+            
+        self.save()
