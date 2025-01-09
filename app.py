@@ -4,11 +4,12 @@ from document_exporter import export_to_word, export_to_pdf
 from models.database import Database
 from models.user import User
 from config.pricing import PRICING_PLANS, CREDIT_PACKAGES
+from auth import auth
+from payments import payments
 import os
 import logging
 from datetime import datetime
 from functools import wraps
-from auth import auth
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -20,9 +21,12 @@ app.secret_key = os.getenv("FLASK_SECRET_KEY", "your-secret-key")  # Change in p
 # Configuration
 app.config['GOOGLE_CLIENT_ID'] = os.environ.get('GOOGLE_CLIENT_ID')
 app.config['GOOGLE_CLIENT_SECRET'] = os.environ.get('GOOGLE_CLIENT_SECRET')
+app.config['PAYSTACK_SECRET_KEY'] = os.environ.get('PAYSTACK_SECRET_KEY')
+app.config['PAYSTACK_PUBLIC_KEY'] = os.environ.get('PAYSTACK_PUBLIC_KEY')
 
 # Register blueprints
 app.register_blueprint(auth, url_prefix='/auth')
+app.register_blueprint(payments, url_prefix='/payments')
 
 @app.context_processor
 def inject_user():
