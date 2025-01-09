@@ -9,10 +9,10 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0
-      - key: OPENAI_API_KEY
-        sync: false
       - key: FLASK_SECRET_KEY
         generateValue: true
+      - key: OPENAI_API_KEY
+        sync: false
       - key: FLASK_ENV
         value: production
       - key: DATABASE_URL
@@ -21,9 +21,28 @@ services:
         sync: false
       - key: STRIPE_SECRET_KEY
         sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: HUBTEL_CLIENT_ID
+        sync: false
+      - key: HUBTEL_CLIENT_SECRET
+        sync: false
+      - key: HUBTEL_MERCHANT_ID
+        sync: false
+      - key: MONGODB_URI
+        fromDatabase:
+          name: vidpoint-db
+          property: connectionString
     healthCheckPath: /
     autoDeploy: true
     disk:
       name: vidpoint-data
       mountPath: /data
       sizeGB: 1
+
+databases:
+  - name: vidpoint-db
+    databaseName: vidpoint
+    plan: free

@@ -20,3 +20,7 @@ google-auth-oauthlib==1.1.0
 # Payment Processing
 hubtel-payment==1.0.1
 requests==2.31.0
+
+# Database
+pymongo==4.6.1
+dnspython==2.4.2
