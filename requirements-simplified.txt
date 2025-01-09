@@ -1,0 +1,14 @@
+flask
+flask-cors
+whisper
+pydub
+torch
+transformers
+pymongo
+yt-dlp
+SpeechRecognition
+nltk
+scikit-learn
+google-auth-oauthlib
+google-auth
+google-api-python-client

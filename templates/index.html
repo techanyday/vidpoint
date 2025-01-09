@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VidPoint - Video Key Points Extractor</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-100">
+    <div class="container mx-auto px-4 py-8">
+        <h1 class="text-3xl font-bold text-center mb-8">VidPoint</h1>
+        
+        <!-- Input Form -->
+        <div class="max-w-2xl mx-auto bg-white rounded-lg shadow-md p-6 mb-8">
+            <form id="videoForm" class="space-y-4">
+                <div>
+                    <label for="videoUrl" class="block text-sm font-medium text-gray-700">YouTube Video URL</label>
+                    <input type="text" id="videoUrl" name="videoUrl" 
+                           class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                           placeholder="https://youtube.com/watch?v=...">
+                </div>
+                <button type="submit" 
+                        class="w-full bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+                    Process Video
+                </button>
+            </form>
+        </div>
+        
+        <!-- Loading Indicator -->
+        <div id="loading" class="hidden">
+            <div class="flex justify-center items-center">
+                <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+            </div>
+        </div>
+        
+        <!-- Results Section -->
+        <div id="results" class="hidden max-w-2xl mx-auto mt-8">
+            <!-- Transcript Section -->
+            <div class="mb-8">
+                <div class="flex justify-between items-center mb-2">
+                    <h2 id="transcriptTitle" class="text-xl font-semibold text-gray-800">Video Transcript</h2>
+                    <button onclick="exportContent('transcript', 'word')" class="px-3 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600">Export as Word</button>
+                </div>
+                <div class="bg-white p-4 rounded-lg shadow">
+                    <p id="transcript" class="text-gray-600 whitespace-pre-wrap"></p>
+                </div>
+            </div>
+            
+            <!-- Key Points Section -->
+            <div class="mb-8">
+                <div class="flex justify-between items-center mb-2">
+                    <h2 id="keyPointsTitle" class="text-xl font-semibold text-gray-800">Key Points</h2>
+                    <button onclick="exportContent('key_points', 'word')" class="px-3 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600">Export as Word</button>
+                </div>
+                <div class="bg-white p-4 rounded-lg shadow">
+                    <ul id="keyPoints" class="list-disc pl-5 space-y-2"></ul>
+                </div>
+            </div>
+            
+            <!-- Summary Section -->
+            <div class="mb-8">
+                <div class="flex justify-between items-center mb-2">
+                    <h2 id="summaryTitle" class="text-xl font-semibold text-gray-800">Summary</h2>
+                    <button onclick="exportContent('summary', 'word')" class="px-3 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600">Export as Word</button>
+                </div>
+                <div class="bg-white p-4 rounded-lg shadow">
+                    <p id="summary" class="text-gray-600"></p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Error Message -->
+        <div id="error" class="hidden max-w-2xl mx-auto mt-4 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded"></div>
+    </div>
+
+    <script>
+        document.getElementById('videoForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const videoUrl = document.getElementById('videoUrl').value;
+            const loading = document.getElementById('loading');
+            const results = document.getElementById('results');
+            const error = document.getElementById('error');
+            
+            // Show loading, hide results and error
+            loading.classList.remove('hidden');
+            results.classList.add('hidden');
+            error.classList.add('hidden');
+            
+            try {
+                const response = await fetch('/process', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ videoUrl: videoUrl }),
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    // Set titles
+                    document.getElementById('transcriptTitle').textContent = data.titles.transcript;
+                    document.getElementById('keyPointsTitle').textContent = data.titles.key_points;
+                    document.getElementById('summaryTitle').textContent = data.titles.summary;
+                    
+                    // Set content
+                    document.getElementById('transcript').textContent = data.transcript;
+                    document.getElementById('keyPoints').innerHTML = data.key_points
+                        .map(point => `<li class="text-gray-600">${point}</li>`)
+                        .join('');
+                    document.getElementById('summary').textContent = data.summary;
+                    
+                    // Show results
+                    results.classList.remove('hidden');
+                } else {
+                    throw new Error(data.error || 'Failed to process video');
+                }
+            } catch (err) {
+                error.textContent = err.message;
+                error.classList.remove('hidden');
+            } finally {
+                loading.classList.add('hidden');
+            }
+        });
+
+        async function exportContent(type, format) {
+            try {
+                const title = document.getElementById(`${type}Title`).textContent;
+                let content;
+                
+                if (type === 'key_points') {
+                    // Get key points as array
+                    content = Array.from(document.getElementById('keyPoints').children)
+                        .map(li => li.textContent.trim());
+                } else {
+                    // Get transcript or summary as text
+                    content = document.getElementById(type).textContent.trim();
+                }
+                
+                const response = await fetch('/export', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        content: content,
+                        type: type,
+                        format: format,
+                        title: title
+                    }),
+                });
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error || 'Export failed');
+                }
+                
+                // Handle the file download
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `vidpoint_${type}_${new Date().toISOString().slice(0,10)}.${format}`;
+                document.body.appendChild(a);
+                a.click();
+                
+                // Clean up
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+            } catch (err) {
+                console.error('Export error:', err);
+                alert('Failed to export: ' + err.message);
+            }
+        }
+    </script>
+</body>
+</html>
