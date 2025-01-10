@@ -26,15 +26,27 @@ services:
       - key: GOOGLE_CLIENT_SECRET
         sync: false
       - key: HUBTEL_CLIENT_ID
-        sync: false
+        value: ylmvenyc
       - key: HUBTEL_CLIENT_SECRET
-        sync: false
+        value: lojgrhvp
       - key: HUBTEL_MERCHANT_ID
         sync: false
       - key: MONGODB_URI
         fromDatabase:
           name: vidpoint-db
           property: connectionString
+      - key: SMTP_SERVER
+        value: mail.tekstreetz.com
+      - key: SMTP_PORT
+        value: 465
+      - key: SMTP_USERNAME
+        value: support@tekstreetz.com
+      - key: SMTP_PASSWORD
+        value: Pkmensah100%
+      - key: FROM_EMAIL
+        value: support@tekstreetz.com
+      - key: SMTP_USE_SSL
+        value: "true"
     healthCheckPath: /
     autoDeploy: true
     disk:

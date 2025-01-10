@@ -81,14 +81,13 @@ class Database:
             update_data
         )
 
-    def get_user_transactions(self, user_id, limit=10):
-        """Get user's transaction history."""
-        return self.find_many(
-            'transactions',
-            {'user_id': user_id},
-            sort=[('created_at', -1)],
-            limit=limit
-        )
+    def get_user_transactions(self, user_id, limit=None):
+        """Get user's transactions."""
+        query = {'user_id': user_id}
+        cursor = self.db.transactions.find(query).sort('created_at', -1)
+        if limit:
+            cursor = cursor.limit(limit)
+        return list(cursor)
 
     # Subscription specific methods
     def get_user_subscription(self, user_id):
@@ -130,3 +129,73 @@ class Database:
                 'user_id': user_id,
                 'amount': amount
             })
+
+    # Dashboard specific methods
+    def update_user_settings(self, user_id, settings):
+        """Update user settings."""
+        try:
+            result = self.db.users.update_one(
+                {'_id': user_id},
+                {'$set': settings}
+            )
+            return result.modified_count > 0
+        except Exception as e:
+            # current_app.logger.error(f"Failed to update user settings: {str(e)}")
+            return False
+
+    def get_user_stats(self, user_id):
+        """Get user statistics."""
+        pipeline = [
+            {'$match': {'user_id': user_id}},
+            {'$group': {
+                '_id': None,
+                'videos_processed': {'$sum': 1},
+                'total_processing_time': {'$sum': '$processing_time'}
+            }}
+        ]
+        
+        result = list(self.db.video_exports.aggregate(pipeline))
+        if result:
+            stats = result[0]
+            del stats['_id']
+            return stats
+        return {
+            'videos_processed': 0,
+            'total_processing_time': 0
+        }
+
+    def get_notification_history(self, user_id, limit=10, skip=0):
+        """Get user's notification history."""
+        return list(self.db.notifications.find(
+            {'user_id': user_id}
+        ).sort('sent_at', -1).skip(skip).limit(limit))
+
+    def update_notification_preferences(self, user_id, preferences):
+        """Update user's notification preferences."""
+        try:
+            result = self.db.users.update_one(
+                {'_id': user_id},
+                {'$set': {'notification_preferences': preferences}}
+            )
+            return result.modified_count > 0
+        except Exception as e:
+            return False
+
+    def get_notification_preferences(self, user_id):
+        """Get user's notification preferences."""
+        user = self.db.users.find_one(
+            {'_id': user_id},
+            {'notification_preferences': 1}
+        )
+        return user.get('notification_preferences', {
+            'subscription_expiry': True,
+            'low_credits': True,
+            'payment_confirmation': True,
+            'export_complete': True,
+            'promotional': False,
+            'email_digest': 'daily'  # Options: 'daily', 'weekly', 'none'
+        })
+
+def get_db():
+    """Get the database instance."""
+    return Database()

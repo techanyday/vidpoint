@@ -1,0 +1,307 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - VidPoint{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <!-- User Info Section -->
+    <div class="bg-white rounded-lg shadow-md p-6 mb-8">
+        <div class="flex items-center justify-between mb-6">
+            <div>
+                <h1 class="text-2xl font-bold text-gray-800">Welcome, {{ user.name }}</h1>
+                <p class="text-gray-600">{{ user.email }}</p>
+            </div>
+            <div class="text-right">
+                <p class="text-sm text-gray-600">Member since</p>
+                <p class="font-semibold">{{ user.created_at.strftime('%B %d, %Y') }}</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Stats Grid -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <!-- Credits -->
+        <div class="bg-white rounded-lg shadow-md p-6">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-sm text-gray-600">Available Credits</p>
+                    <h2 class="text-3xl font-bold text-gray-800">{{ user.credits }}</h2>
+                </div>
+                <div class="bg-blue-100 rounded-full p-3">
+                    <svg class="w-6 h-6 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                </div>
+            </div>
+            <div class="mt-4">
+                <a href="{{ url_for('payments.checkout', plan='credits-500') }}" class="text-blue-500 hover:text-blue-700 text-sm font-semibold">Buy More Credits →</a>
+            </div>
+        </div>
+
+        <!-- Subscription Status -->
+        <div class="bg-white rounded-lg shadow-md p-6">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-sm text-gray-600">Current Plan</p>
+                    <h2 class="text-3xl font-bold text-gray-800">{{ user.subscription.plan_name }}</h2>
+                </div>
+                <div class="bg-green-100 rounded-full p-3">
+                    <svg class="w-6 h-6 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                </div>
+            </div>
+            <div class="mt-4">
+                <p class="text-sm text-gray-600">Expires: {{ user.subscription.end_date.strftime('%B %d, %Y') }}</p>
+                {% if user.subscription.days_left <= 7 %}
+                <a href="{{ url_for('payments.checkout', plan=user.subscription.plan_name.lower()) }}" class="text-green-500 hover:text-green-700 text-sm font-semibold">Renew Now →</a>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Usage Stats -->
+        <div class="bg-white rounded-lg shadow-md p-6">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-sm text-gray-600">Videos Processed</p>
+                    <h2 class="text-3xl font-bold text-gray-800">{{ user.stats.videos_processed }}</h2>
+                </div>
+                <div class="bg-purple-100 rounded-full p-3">
+                    <svg class="w-6 h-6 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                    </svg>
+                </div>
+            </div>
+            <div class="mt-4">
+                <p class="text-sm text-gray-600">Total Processing Time: {{ user.stats.total_processing_time }}</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Transactions -->
+    <div class="bg-white rounded-lg shadow-md p-6 mb-8">
+        <h3 class="text-xl font-semibold text-gray-800 mb-4">Recent Transactions</h3>
+        {% if transactions %}
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead>
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200">
+                    {% for transaction in transactions %}
+                    <tr>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            {{ transaction.created_at.strftime('%Y-%m-%d %H:%M') }}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {{ transaction.description }}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            GHS {{ "%.2f"|format(transaction.amount/100) }}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
+                                {% if transaction.status == 'completed' %}bg-green-100 text-green-800
+                                {% elif transaction.status == 'pending' %}bg-yellow-100 text-yellow-800
+                                {% else %}bg-red-100 text-red-800{% endif %}">
+                                {{ transaction.status }}
+                            </span>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-gray-600">No transactions yet.</p>
+        {% endif %}
+    </div>
+
+    <!-- Account Settings -->
+    <div class="bg-white rounded-lg shadow-md p-6 mb-8">
+        <h3 class="text-xl font-semibold text-gray-800 mb-4">Account Settings</h3>
+        <form method="POST" action="{{ url_for('dashboard.update_settings') }}" class="space-y-6">
+            <div>
+                <label for="name" class="block text-sm font-medium text-gray-700">Name</label>
+                <input type="text" name="name" id="name" value="{{ user.name }}" 
+                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+            </div>
+
+            <div class="border-t border-gray-200 pt-6">
+                <h4 class="text-lg font-medium text-gray-800 mb-4">Notification Preferences</h4>
+                
+                <!-- Individual Notifications -->
+                <div class="space-y-4">
+                    <div>
+                        <label class="flex items-center">
+                            <input type="checkbox" name="notification_preferences.subscription_expiry" 
+                                {% if user.notification_preferences.subscription_expiry %}checked{% endif %}
+                                class="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                            <span class="ml-2">
+                                <span class="text-sm font-medium text-gray-700">Subscription Expiry Alerts</span>
+                                <p class="text-sm text-gray-500">Get notified when your subscription is about to expire</p>
+                            </span>
+                        </label>
+                    </div>
+                    
+                    <div>
+                        <label class="flex items-center">
+                            <input type="checkbox" name="notification_preferences.low_credits" 
+                                {% if user.notification_preferences.low_credits %}checked{% endif %}
+                                class="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                            <span class="ml-2">
+                                <span class="text-sm font-medium text-gray-700">Low Credits Alerts</span>
+                                <p class="text-sm text-gray-500">Get notified when your credits are running low</p>
+                            </span>
+                        </label>
+                    </div>
+                    
+                    <div>
+                        <label class="flex items-center">
+                            <input type="checkbox" name="notification_preferences.payment_confirmation" 
+                                {% if user.notification_preferences.payment_confirmation %}checked{% endif %}
+                                class="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                            <span class="ml-2">
+                                <span class="text-sm font-medium text-gray-700">Payment Confirmations</span>
+                                <p class="text-sm text-gray-500">Receive payment receipts and confirmations</p>
+                            </span>
+                        </label>
+                    </div>
+                    
+                    <div>
+                        <label class="flex items-center">
+                            <input type="checkbox" name="notification_preferences.export_complete" 
+                                {% if user.notification_preferences.export_complete %}checked{% endif %}
+                                class="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                            <span class="ml-2">
+                                <span class="text-sm font-medium text-gray-700">Export Completion Notifications</span>
+                                <p class="text-sm text-gray-500">Get notified when your video exports are complete</p>
+                            </span>
+                        </label>
+                    </div>
+                    
+                    <div>
+                        <label class="flex items-center">
+                            <input type="checkbox" name="notification_preferences.promotional" 
+                                {% if user.notification_preferences.promotional %}checked{% endif %}
+                                class="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                            <span class="ml-2">
+                                <span class="text-sm font-medium text-gray-700">Promotional Emails</span>
+                                <p class="text-sm text-gray-500">Receive updates about new features and special offers</p>
+                            </span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Email Digest Preference -->
+                <div class="mt-6">
+                    <label for="email_digest" class="block text-sm font-medium text-gray-700">Email Digest Frequency</label>
+                    <select name="notification_preferences.email_digest" id="email_digest"
+                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                        <option value="daily" {% if user.notification_preferences.email_digest == 'daily' %}selected{% endif %}>Daily</option>
+                        <option value="weekly" {% if user.notification_preferences.email_digest == 'weekly' %}selected{% endif %}>Weekly</option>
+                        <option value="none" {% if user.notification_preferences.email_digest == 'none' %}selected{% endif %}>None</option>
+                    </select>
+                    <p class="mt-1 text-sm text-gray-500">How often you want to receive activity summaries</p>
+                </div>
+            </div>
+
+            <div class="flex justify-end">
+                <button type="submit" 
+                    class="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                    Save Changes
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Notification History -->
+    <div class="bg-white rounded-lg shadow-md p-6">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="text-xl font-semibold text-gray-800">Notification History</h3>
+            <a href="#" class="text-sm text-blue-600 hover:text-blue-800">View All</a>
+        </div>
+        
+        {% if notifications %}
+        <div class="space-y-4">
+            {% for notification in notifications %}
+            <div class="flex items-start space-x-4 p-4 {% if not loop.last %}border-b border-gray-200{% endif %}">
+                <!-- Notification Icon -->
+                <div class="flex-shrink-0">
+                    {% if notification.type == 'subscription_expiring' %}
+                    <div class="w-8 h-8 bg-yellow-100 rounded-full flex items-center justify-center">
+                        <svg class="w-4 h-4 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                    </div>
+                    {% elif notification.type == 'low_credits' %}
+                    <div class="w-8 h-8 bg-red-100 rounded-full flex items-center justify-center">
+                        <svg class="w-4 h-4 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                    </div>
+                    {% elif notification.type == 'payment_confirmation' %}
+                    <div class="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
+                        <svg class="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                    </div>
+                    {% else %}
+                    <div class="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+                        <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                    </div>
+                    {% endif %}
+                </div>
+                
+                <!-- Notification Content -->
+                <div class="flex-1 min-w-0">
+                    <p class="text-sm font-medium text-gray-900">
+                        {{ notification.title }}
+                    </p>
+                    <p class="text-sm text-gray-500">
+                        {{ notification.message }}
+                    </p>
+                    <p class="mt-1 text-xs text-gray-400">
+                        {{ notification.sent_at.strftime('%B %d, %Y at %I:%M %p') }}
+                    </p>
+                </div>
+                
+                {% if notification.action_url %}
+                <div class="flex-shrink-0">
+                    <a href="{{ notification.action_url }}" class="text-sm text-blue-600 hover:text-blue-800">
+                        {{ notification.action_text }}
+                    </a>
+                </div>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+        
+        {% if has_more_notifications %}
+        <div class="mt-4 text-center">
+            <a href="{{ url_for('dashboard.notifications', page=current_page+1) }}" 
+                class="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
+                Load More
+            </a>
+        </div>
+        {% endif %}
+        
+        {% else %}
+        <div class="text-center py-8">
+            <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"></path>
+            </svg>
+            <h3 class="mt-2 text-sm font-medium text-gray-900">No notifications</h3>
+            <p class="mt-1 text-sm text-gray-500">You don't have any notifications yet.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

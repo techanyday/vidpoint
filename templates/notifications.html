@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+
+{% block title %}Notifications - VidPoint{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <div class="bg-white rounded-lg shadow-md">
+        <!-- Header -->
+        <div class="border-b border-gray-200 px-6 py-4">
+            <div class="flex items-center justify-between">
+                <h1 class="text-2xl font-semibold text-gray-800">Notifications</h1>
+                <div class="flex items-center space-x-4">
+                    <button type="button" class="text-sm text-blue-600 hover:text-blue-800">
+                        Mark all as read
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Notification List -->
+        <div class="divide-y divide-gray-200" id="notification-list">
+            {% include "partials/notification_list.html" %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Handle infinite scroll
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting && entry.target.getAttribute('data-has-more') === 'true') {
+                    loadMoreNotifications(entry.target);
+                }
+            });
+        });
+
+        function loadMoreNotifications(loadMoreButton) {
+            const page = parseInt(loadMoreButton.getAttribute('data-page')) + 1;
+            fetch(`/dashboard/notifications?page=${page}`, {
+                headers: {
+                    'HX-Request': 'true'
+                }
+            })
+            .then(response => response.text())
+            .then(html => {
+                const notificationList = document.getElementById('notification-list');
+                notificationList.innerHTML += html;
+                observer.observe(notificationList.querySelector('[data-load-more]'));
+            });
+        }
+
+        // Start observing the load more button
+        const loadMoreButton = document.querySelector('[data-load-more]');
+        if (loadMoreButton) {
+            observer.observe(loadMoreButton);
+        }
+    });
+</script>
+{% endblock %}

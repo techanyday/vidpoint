@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Payment</title>
+    <script src="https://sandbox.web.squarecdn.com/v1/square.js"></script>
+    <style>
+        #payment-form {
+            max-width: 500px;
+            margin: 20px auto;
+            padding: 20px;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+        }
+        #card-container {
+            margin: 20px 0;
+            min-height: 90px;
+        }
+        button {
+            background: #006aff;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            width: 100%;
+        }
+        button:disabled {
+            background: #ccc;
+        }
+        #payment-status-container {
+            margin: 20px 0;
+            padding: 10px;
+            display: none;
+        }
+        .success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+            border-radius: 4px;
+        }
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <form id="payment-form">
+        <div id="card-container"></div>
+        <button id="card-button" type="button">Pay $10.00</button>
+        <div id="payment-status-container"></div>
+    </form>
+
+    <script>
+        async function initializeCard(payments) {
+            const card = await payments.card();
+            await card.attach('#card-container');
+            return card;
+        }
+
+        async function createPayment(token) {
+            const body = JSON.stringify({
+                sourceId: token,
+                amount: 1000,
+                idempotencyKey: window.crypto.randomUUID()
+            });
+
+            const paymentResponse = await fetch('/process-payment', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body
+            });
+
+            if (paymentResponse.ok) {
+                return paymentResponse.json();
+            }
+
+            const errorBody = await paymentResponse.text();
+            throw new Error(errorBody);
+        }
+
+        async function tokenize(paymentMethod) {
+            const tokenResult = await paymentMethod.tokenize();
+            if (tokenResult.status === 'OK') {
+                return tokenResult.token;
+            }
+            throw new Error(`Tokenization failed: ${tokenResult.status}`);
+        }
+
+        document.addEventListener('DOMContentLoaded', async function () {
+            if (!window.Square) {
+                throw new Error('Square.js failed to load properly');
+            }
+
+            const payments = window.Square.payments('{{ square_app_id }}', '{{ square_location_id }}');
+            let card;
+
+            try {
+                card = await initializeCard(payments);
+            } catch (e) {
+                console.error('Failed to initialize card:', e);
+                return;
+            }
+
+            async function handlePaymentMethodSubmission(event, paymentMethod) {
+                event.preventDefault();
+
+                try {
+                    // disable the submit button as we await tokenization and make a payment request.
+                    cardButton.disabled = true;
+                    const token = await tokenize(paymentMethod);
+                    const paymentResults = await createPayment(token);
+                    displayPaymentResults('SUCCESS');
+                    console.log('Payment Success', paymentResults);
+                } catch (e) {
+                    cardButton.disabled = false;
+                    displayPaymentResults('FAILURE');
+                    console.error(e.message);
+                }
+            }
+
+            const cardButton = document.getElementById('card-button');
+            cardButton.addEventListener('click', async function (event) {
+                await handlePaymentMethodSubmission(event, card);
+            });
+        });
+
+        function displayPaymentResults(status) {
+            const statusContainer = document.getElementById('payment-status-container');
+            statusContainer.style.display = 'block';
+            
+            if (status === 'SUCCESS') {
+                statusContainer.classList.remove('error');
+                statusContainer.classList.add('success');
+                statusContainer.textContent = 'Payment Successful! This should trigger the webhook.';
+            } else {
+                statusContainer.classList.remove('success');
+                statusContainer.classList.add('error');
+                statusContainer.textContent = 'Payment Failed! Please try again.';
+            }
+        }
+    </script>
+</body>
+</html>

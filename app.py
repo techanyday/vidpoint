@@ -6,6 +6,7 @@ from models.user import User
 from config.pricing import PRICING_PLANS, CREDIT_PACKAGES
 from auth import auth
 from payments import payments
+from routes import auth, dashboard, payments, test_email
 import os
 import logging
 from datetime import datetime
@@ -29,8 +30,10 @@ app.config['PAYSTACK_SECRET_KEY'] = os.environ.get('PAYSTACK_SECRET_KEY')
 app.config['PAYSTACK_PUBLIC_KEY'] = os.environ.get('PAYSTACK_PUBLIC_KEY')
 
 # Register blueprints
-app.register_blueprint(auth, url_prefix='/auth')
-app.register_blueprint(payments, url_prefix='/payments')
+app.register_blueprint(auth.bp)
+app.register_blueprint(dashboard.bp)
+app.register_blueprint(payments.bp)
+app.register_blueprint(test_email.bp)
 
 @app.context_processor
 def inject_user():

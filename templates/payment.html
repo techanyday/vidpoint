@@ -1,0 +1,175 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="payment-container">
+    <div class="payment-header">
+        <h2>Complete Your Purchase</h2>
+        <p>Choose your preferred payment method</p>
+    </div>
+
+    {% if payment_status %}
+    <div class="payment-status {{ 'success' if payment_status == 'success' else 'error' }}">
+        {% if payment_status == 'success' %}
+            Payment successful! Your account has been updated.
+        {% else %}
+            Payment failed. Please try again or contact support.
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <div class="payment-summary">
+        <div class="summary-row">
+            <span>Plan</span>
+            <span>{{ plan.name }}</span>
+        </div>
+        <div class="summary-row">
+            <span>Duration</span>
+            <span>{{ plan.duration }} days</span>
+        </div>
+        <div class="summary-row">
+            <span>Summaries</span>
+            <span>{{ plan.summaries }}</span>
+        </div>
+        <div class="summary-row total">
+            <span>Total</span>
+            <span>GHS {{ "%.2f"|format(plan.amount/100) }}</span>
+        </div>
+    </div>
+
+    <div class="payment-methods">
+        <div class="payment-method" data-method="card">
+            <div class="payment-method-header">
+                <img src="{{ url_for('static', filename='img/card.svg') }}" alt="Card" class="payment-method-icon">
+                <span class="payment-method-title">Credit/Debit Card</span>
+            </div>
+            <p class="payment-method-description">Pay with Visa or Mastercard</p>
+        </div>
+
+        <div class="payment-method" data-method="momo">
+            <div class="payment-method-header">
+                <img src="{{ url_for('static', filename='img/momo.svg') }}" alt="Mobile Money" class="payment-method-icon">
+                <span class="payment-method-title">Mobile Money</span>
+            </div>
+            <p class="payment-method-description">Pay with Mobile Money</p>
+            <div class="momo-providers">
+                <div class="momo-provider" data-provider="mtn">
+                    <img src="{{ url_for('static', filename='img/mtn.svg') }}" alt="MTN" class="momo-provider-icon">
+                    <span>MTN Mobile Money</span>
+                </div>
+                <div class="momo-provider" data-provider="vodafone">
+                    <img src="{{ url_for('static', filename='img/vodafone.svg') }}" alt="Vodafone" class="momo-provider-icon">
+                    <span>Vodafone Cash</span>
+                </div>
+                <div class="momo-provider" data-provider="tigo">
+                    <img src="{{ url_for('static', filename='img/tigo.svg') }}" alt="AirtelTigo" class="momo-provider-icon">
+                    <span>AirtelTigo Money</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="payment-actions">
+        <button class="btn-pay" disabled>
+            <span class="loading-spinner"></span>
+            Pay GHS {{ "%.2f"|format(plan.amount/100) }}
+        </button>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const paymentMethods = document.querySelectorAll('.payment-method');
+    const momoProviders = document.querySelectorAll('.momo-provider');
+    const payButton = document.querySelector('.btn-pay');
+    let selectedMethod = null;
+    let selectedProvider = null;
+
+    // Handle payment method selection
+    paymentMethods.forEach(method => {
+        method.addEventListener('click', function() {
+            // Remove selection from all methods
+            paymentMethods.forEach(m => m.classList.remove('selected'));
+            // Select clicked method
+            this.classList.add('selected');
+            selectedMethod = this.dataset.method;
+            
+            // Reset provider selection if not momo
+            if (selectedMethod !== 'momo') {
+                momoProviders.forEach(p => p.classList.remove('selected'));
+                selectedProvider = null;
+            }
+            
+            // Enable/disable pay button
+            updatePayButton();
+        });
+    });
+
+    // Handle mobile money provider selection
+    momoProviders.forEach(provider => {
+        provider.addEventListener('click', function(e) {
+            e.stopPropagation();
+            // Remove selection from all providers
+            momoProviders.forEach(p => p.classList.remove('selected'));
+            // Select clicked provider
+            this.classList.add('selected');
+            selectedProvider = this.dataset.provider;
+            
+            // Enable/disable pay button
+            updatePayButton();
+        });
+    });
+
+    function updatePayButton() {
+        const canPay = selectedMethod === 'card' || (selectedMethod === 'momo' && selectedProvider);
+        payButton.disabled = !canPay;
+    }
+
+    // Handle payment submission
+    payButton.addEventListener('click', async function() {
+        if (this.disabled) return;
+
+        // Show loading state
+        this.classList.add('loading');
+        this.disabled = true;
+
+        try {
+            // Initialize payment
+            const response = await fetch('/payments/initialize-payment', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    plan: '{{ plan.id }}',
+                    payment_method: selectedMethod,
+                    provider: selectedProvider
+                })
+            });
+
+            const data = await response.json();
+
+            if (data.status === 'success') {
+                // Redirect to Hubtel checkout
+                window.location.href = data.checkout_url;
+            } else {
+                throw new Error(data.error || 'Payment initialization failed');
+            }
+        } catch (error) {
+            // Show error message
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'payment-status error';
+            errorDiv.textContent = error.message;
+            
+            const container = document.querySelector('.payment-container');
+            container.insertBefore(errorDiv, container.firstChild);
+            
+            // Reset button state
+            this.classList.remove('loading');
+            this.disabled = false;
+        }
+    });
+});
+</script>
+{% endblock %}
