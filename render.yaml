@@ -4,7 +4,9 @@ services:
     env: python
     region: oregon
     plan: starter
-    buildCommand: pip install -r requirements.txt
+    buildCommand: |
+      apt-get update && apt-get install -y ffmpeg
+      pip install -r requirements.txt
     startCommand: gunicorn app:app
     envVars:
       - key: PYTHON_VERSION
@@ -17,19 +19,9 @@ services:
         value: production
       - key: DATABASE_URL
         sync: false
-      - key: STRIPE_PUBLIC_KEY
-        sync: false
-      - key: STRIPE_SECRET_KEY
-        sync: false
       - key: GOOGLE_CLIENT_ID
         sync: false
       - key: GOOGLE_CLIENT_SECRET
-        sync: false
-      - key: HUBTEL_CLIENT_ID
-        value: ylmvenyc
-      - key: HUBTEL_CLIENT_SECRET
-        value: lojgrhvp
-      - key: HUBTEL_MERCHANT_ID
         sync: false
       - key: MONGODB_URI
         fromDatabase:
@@ -47,6 +39,16 @@ services:
         value: support@tekstreetz.com
       - key: SMTP_USE_SSL
         value: "true"
+      - key: SQUARE_APP_ID
+        sync: false
+      - key: SQUARE_ACCESS_TOKEN
+        sync: false
+      - key: SQUARE_LOCATION_ID
+        sync: false
+      - key: SQUARE_ENVIRONMENT
+        value: sandbox
+      - key: SQUARE_WEBHOOK_SIGNING_KEY
+        sync: false
     healthCheckPath: /
     autoDeploy: true
     disk:
