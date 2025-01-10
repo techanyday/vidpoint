@@ -1,6 +1,7 @@
 from flask import jsonify, request, current_app, url_for, session, redirect
 from . import payments
 from models.user import User
+from models.database import Database
 import requests
 import os
 from datetime import datetime, timedelta
@@ -8,7 +9,7 @@ import json
 import hmac
 import hashlib
 import uuid
-from database import Database
+from models.hubtel import Hubtel
 
 # Hubtel API configuration
 HUBTEL_API_BASE = "https://api.hubtel.com/v2/pos"
