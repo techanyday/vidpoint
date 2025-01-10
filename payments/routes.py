@@ -9,7 +9,6 @@ import json
 import hmac
 import hashlib
 import uuid
-from models.hubtel import Hubtel
 
 # Hubtel API configuration
 HUBTEL_API_BASE = "https://api.hubtel.com/v2/pos"
