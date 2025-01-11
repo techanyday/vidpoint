@@ -14,7 +14,10 @@ class ChatGPTExtractor:
         if not self.api_key:
             raise ValueError("OpenAI API key is required")
         
-        self.client = openai.OpenAI(api_key=self.api_key)
+        self.client = openai.OpenAI(
+            api_key=self.api_key,
+            base_url="https://api.openai.com/v1"
+        )
         
     def generate_title(self, text: str, content_type: str) -> str:
         """Generate an engaging title for the content."""
