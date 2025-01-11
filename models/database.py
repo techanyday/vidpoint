@@ -1,38 +1,75 @@
 """Database interface for VidPoint."""
 import json
 import os
+import time
 import certifi
 from pymongo import MongoClient, server_api
+from pymongo.errors import ConnectionFailure, ServerSelectionTimeoutError
 from datetime import datetime
 from typing import Optional, Dict, List
 
 class Database:
     _instance = None
+    MAX_RETRY_ATTEMPTS = 3
+    RETRY_DELAY_SECONDS = 5
+
+    @classmethod
+    def _connect_with_retry(cls, uri: str) -> MongoClient:
+        """Attempt to connect to MongoDB with retries."""
+        last_error = None
+        
+        for attempt in range(cls.MAX_RETRY_ATTEMPTS):
+            try:
+                print(f"MongoDB connection attempt {attempt + 1}/{cls.MAX_RETRY_ATTEMPTS}")
+                
+                # Configure MongoDB client with retries and timeouts
+                client = MongoClient(
+                    uri,
+                    tlsCAFile=certifi.where(),
+                    serverSelectionTimeoutMS=5000,
+                    connectTimeoutMS=5000,
+                    socketTimeoutMS=10000,
+                    maxPoolSize=1,
+                    retryWrites=True
+                )
+                
+                # Test connection with a light command
+                client.admin.command('ping')
+                print("Successfully connected to MongoDB")
+                return client
+                
+            except (ConnectionFailure, ServerSelectionTimeoutError) as e:
+                last_error = e
+                print(f"Connection attempt {attempt + 1} failed: {str(e)}")
+                if attempt < cls.MAX_RETRY_ATTEMPTS - 1:
+                    print(f"Retrying in {cls.RETRY_DELAY_SECONDS} seconds...")
+                    time.sleep(cls.RETRY_DELAY_SECONDS)
+                    
+        raise ConnectionFailure(f"Failed to connect after {cls.MAX_RETRY_ATTEMPTS} attempts. Last error: {str(last_error)}")
 
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super(Database, cls).__new__(cls)
+            
             # Initialize MongoDB connection
             mongodb_uri = os.environ.get('MONGODB_URI')
             if not mongodb_uri:
-                # Fallback to localhost only in development
                 mongodb_uri = 'mongodb://localhost:27017/vidpoint'
                 print("Warning: Using localhost MongoDB. Set MONGODB_URI for production.")
             
-            print(f"Connecting to MongoDB...")
+            # Convert srv URI to direct connection if needed
+            if mongodb_uri.startswith('mongodb+srv://'):
+                print("Converting srv URI to direct connection...")
+                parts = mongodb_uri.replace('mongodb+srv://', '').split('@')
+                if len(parts) == 2:
+                    auth, host = parts
+                    cluster = host.split('/')[0]
+                    rest = '/'.join(host.split('/')[1:])
+                    mongodb_uri = f'mongodb://{auth}@{cluster}:27017/{rest}'
+            
             try:
-                # Configure MongoDB client with SSL certificate and stable API
-                client = MongoClient(
-                    mongodb_uri,
-                    server_api=server_api.ServerApi('1'),  # Use stable API
-                    tlsCAFile=certifi.where(),  # Use certifi's certificate bundle
-                    connectTimeoutMS=30000,  # Increase timeout
-                    serverSelectionTimeoutMS=30000,
-                )
-                
-                # Test connection
-                client.admin.command('ping')  # Lighter way to test connection
-                print("Successfully connected to MongoDB")
+                # Connect with retry mechanism
+                client = cls._connect_with_retry(mongodb_uri)
                 cls._instance.client = client
                 cls._instance.db = client.get_database()
                 print(f"Using database: {cls._instance.db.name}")
@@ -40,8 +77,9 @@ class Database:
                 # Initialize database and collections
                 cls._instance._init_database()
             except Exception as e:
-                print(f"Error connecting to MongoDB: {str(e)}")
+                print(f"Error initializing database: {str(e)}")
                 raise
+                
         return cls._instance
 
     def _init_database(self):
