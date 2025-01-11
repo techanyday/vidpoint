@@ -1,26 +1,17 @@
 import logging
-import re
-import nltk
-from nltk.tokenize import sent_tokenize, word_tokenize
-from nltk.corpus import stopwords
-from collections import Counter
+import os
+from openai import OpenAI
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Global cache for checking sentence similarity
-sentence_cache = set()
-
-# Download required NLTK data
-try:
-    nltk.download('punkt', quiet=True)
-    nltk.download('stopwords', quiet=True)
-    nltk.download('punkt_tab', quiet=True)
-    nltk.download('averaged_perceptron_tagger', quiet=True)
-    logger.info("Successfully downloaded NLTK data")
-except Exception as e:
-    logger.error(f"Error downloading NLTK data: {e}")
+# Initialize OpenAI client
+client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
 
 def clean_text(text):
     """Clean text for processing."""
@@ -194,291 +185,148 @@ def shorten_sentence(sentence):
 def clean_sentence(text):
     """Clean and format a sentence for better readability."""
     try:
-        # Fix contractions and possessives
-        contractions = {
-            r"\bim\b": "I'm",
-            r"\bIm\b": "I'm",
-            r"\btheres\b": "there's",
-            r"\bTheirs\b": "there's",
-            r"\bwont\b": "won't",
-            r"\bcant\b": "can't",
-            r"\bdont\b": "don't",
-            r"\bits\b": "it's",
-            r"\blets\b": "let's",
-            r"\bive\b": "I've",
-            r"\byoull\b": "you'll",
-            r"\byoure\b": "you're",
-            r"\btheyre\b": "they're",
-            r"\bweve\b": "we've",
-            r"\btheyve\b": "they've",
-            r"\bcouldnt\b": "couldn't",
-            r"\bwouldnt\b": "wouldn't",
-            r"\bshouldnt\b": "shouldn't",
-            r"\bhasnt\b": "hasn't",
-            r"\bhavent\b": "haven't",
-            r"\bwasnt\b": "wasn't",
-            r"\bwerent\b": "weren't"
-        }
-        
-        for pattern, replacement in contractions.items():
-            text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
-        
-        # Remove filler phrases
+        if not text:
+            return ""
+            
+        # Basic cleaning
+        text = clean_text(text)
+        if not text:
+            return ""
+            
+        # Remove common filler phrases
         filler_phrases = [
-            r"\b(um|uh|like|you know|basically|actually|literally|I mean)\b",
-            r"\b(in this video|hey guys|hey fellow|subscribe|hit the like button)\b",
-            r"\b(I'm going to|I am going to|let me show you|let's talk about)\b",
+            r'\byou know\b',
+            r'\bi mean\b',
+            r'\bkind of\b',
+            r'\bsort of\b',
+            r'\blike\b',
+            r'\bbasically\b',
+            r'\bactually\b',
+            r'\bliterally\b',
+            r'\breally\b',
+            r'\bvery\b',
+            r'\bquite\b',
+            r'\bjust\b',
+            r'\bso\b',
+            r'\bwell\b',
+            r'\bum\b',
+            r'\buh\b'
         ]
         
         for phrase in filler_phrases:
-            text = re.sub(phrase, "", text, flags=re.IGNORECASE)
+            text = re.sub(phrase, '', text, flags=re.IGNORECASE)
         
-        # Clean up whitespace and punctuation
-        text = re.sub(r'\s+', ' ', text)
-        text = re.sub(r'[^\w\s.,!?\'"-]', '', text)  # Keep apostrophes for contractions
-        text = text.strip()
+        # Clean up multiple spaces
+        text = ' '.join(text.split())
         
-        # Ensure proper sentence structure
+        # Capitalize first letter
         if text:
-            # Capitalize first letter
-            text = text[0].upper() + text[1:] if len(text) > 1 else text.upper()
+            text = text[0].upper() + text[1:]
             
-            # Add period if no ending punctuation
-            if not text[-1] in '.!?':
-                text += '.'
+        # Ensure proper ending punctuation
+        if text and text[-1] not in '.!?':
+            text += '.'
             
-            # Fix spacing around punctuation
-            text = re.sub(r'\s+([.,!?])', r'\1', text)
-            text = re.sub(r'([.,!?])([^\s])', r'\1 \2', text)
+        # Remove duplicate punctuation
+        text = re.sub(r'([.!?])\1+', r'\1', text)
         
-        return text
+        # Clean up spaces around punctuation
+        text = re.sub(r'\s+([.!?,])', r'\1', text)
+        
+        return text.strip()
         
     except Exception as e:
         logger.error(f"Error cleaning sentence: {str(e)}")
         return text
 
-def get_sentence_score(sentence):
-    """Score a sentence based on content value and structure."""
-    try:
-        # Keywords related to software development and business
-        keywords = {
-            'software': 2.0,
-            'development': 1.5,
-            'business': 1.5,
-            'company': 1.5,
-            'product': 1.5,
-            'service': 1.5,
-            'customer': 1.5,
-            'market': 1.5,
-            'solution': 1.5,
-            'platform': 1.5,
-            'technology': 1.5,
-            'application': 1.5,
-            'tool': 1.5,
-            'feature': 1.5,
-            'system': 1.5,
-            'process': 1.5,
-            'strategy': 1.5,
-            'revenue': 2.0,
-            'profit': 2.0,
-            'cost': 1.5,
-            'price': 1.5,
-            'investment': 1.5,
-            'growth': 1.5,
-            'scale': 1.5,
-            'white-label': 2.0,
-            'startup': 2.0,
-            'enterprise': 1.8,
-        }
-        
-        # Action verbs get bonus points
-        action_verbs = {
-            'build': 1.2,
-            'create': 1.2,
-            'develop': 1.2,
-            'implement': 1.2,
-            'launch': 1.2,
-            'start': 1.2,
-            'grow': 1.2,
-            'expand': 1.2,
-            'improve': 1.2,
-            'optimize': 1.2,
-            'increase': 1.2,
-            'reduce': 1.2,
-            'generate': 1.2,
-            'offer': 1.2,
-            'provide': 1.2,
-        }
-        
-        words = word_tokenize(sentence.lower())
-        score = 0.0
-        
-        # Score based on keywords and verbs
-        for word in words:
-            if word in keywords:
-                score += keywords[word]
-            if word in action_verbs:
-                score += action_verbs[word]
-        
-        # Bonus for sentences with proper structure
-        if re.match(r'^[A-Z].*[.!?]$', sentence):  # Starts with capital, ends with punctuation
-            score *= 1.1
-        
-        # Bonus for medium-length sentences (not too short, not too long)
-        length = len(words)
-        if 8 <= length <= 15:  # Sweet spot for sentence length
-            score *= 1.2
-        elif length > 15:  # Penalty for very long sentences
-            score *= 0.8
-        elif length < 5:  # Penalty for very short sentences
-            score *= 0.6
-        
-        # Penalty for sentences that are likely introductory or concluding
-        intro_patterns = [
-            r'^\s*(hi|hello|hey|welcome|today)',
-            r'in this video',
-            r'subscribe|like|comment',
-            r'thank you|thanks for watching',
-        ]
-        
-        for pattern in intro_patterns:
-            if re.search(pattern, sentence.lower()):
-                score *= 0.3
-        
-        return score
-        
-    except Exception as e:
-        logger.error(f"Error scoring sentence: {str(e)}")
-        return 0.0
-
 def extract_key_points(transcript, num_points=6):
-    """Extract key points from a transcript."""
+    """Extract key points from a transcript using GPT-3.5-turbo."""
     try:
-        global sentence_cache
-        sentence_cache.clear()  # Clear cache for new extraction
-        
         logger.info("Starting key points extraction")
         
-        if not transcript or not isinstance(transcript, str):
-            logger.error("Invalid transcript provided")
-            return []
+        # Create the prompt with clear instructions
+        system_prompt = """You are an expert at extracting key business insights and value propositions from text.
+        Extract the most important business-focused key points from the given transcript.
+        Focus on pricing, revenue, business models, and actionable insights.
+        Format each point as a clear, concise statement.
+        Do not include generic or filler statements.
+        Each point should provide specific value or actionable information."""
         
-        # Clean the transcript
-        transcript = clean_text(transcript)
-        if not transcript:
-            logger.error("Empty transcript after cleaning")
-            return []
+        user_prompt = f"Extract {num_points} key business points from this transcript:\n\n{transcript}"
         
-        # Split into sentences
-        try:
-            sentences = sent_tokenize(transcript)
-        except Exception as e:
-            logger.warning(f"NLTK tokenizer failed: {e}, falling back to simple split")
-            sentences = [s.strip() for s in re.split(r'[.!?]+', transcript) if s.strip()]
+        # Call GPT-3.5-turbo
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            temperature=0.7,
+            max_tokens=300
+        )
         
-        if not sentences:
-            logger.error("No sentences found in transcript")
-            return []
+        # Extract and clean the key points
+        key_points_text = response.choices[0].message.content.strip()
+        key_points = [point.strip('- ').strip() for point in key_points_text.split('\n') if point.strip()]
         
-        # Clean and filter sentences
-        cleaned_sentences = []
-        for s in sentences:
-            cleaned = clean_text(s)
-            if cleaned and 5 <= len(cleaned.split()) <= 20:  # Initial length filter
-                cleaned = clean_sentence(cleaned)
-                if cleaned and 5 <= len(cleaned.split()) <= 15:  # Must be within final length limits
-                    cleaned_sentences.append(cleaned)
+        # Take only the requested number of points
+        key_points = key_points[:num_points]
         
-        sentences = cleaned_sentences
-        if not sentences:
-            logger.error("No valid sentences after cleaning")
-            return []
-        
-        # Get word frequencies (excluding stopwords)
-        try:
-            stop_words = set(stopwords.words('english'))
-            # Add custom stopwords
-            custom_stops = {
-                'like', 'going', 'want', 'know', 'think', 'really', 'actually',
-                'basically', 'literally', 'obviously', 'simply', 'just', 'right',
-                'yeah', 'hey', 'okay', 'um', 'uh', 'well', 'so', 'guys', 'folks',
-                'everybody', 'everyone', 'anybody', 'anyone', 'somebody', 'someone',
-                'gonna', 'wanna', 'kinda', 'sorta', 'lemme', 'gimme', 'dunno',
-                'gotta', 'imma', 'yall', 'yknow', 'ima', 'tryna'
-            }
-            stop_words.update(custom_stops)
-        except Exception as e:
-            logger.warning(f"Could not load stopwords: {e}, using empty set")
-            stop_words = set()
-        
-        words = ' '.join(sentences).lower().split()
-        words = [w for w in words if w not in stop_words and len(w) > 2]
-        
-        if not words:
-            logger.error("No valid words found after filtering")
-            return []
-        
-        word_freq = Counter(words)
-        total_freq = sum(word_freq.values())
-        
-        # Score and select sentences
-        scored_sentences = []
-        for sentence in sentences:
-            score = get_sentence_score(sentence)
-            if score > 0:
-                scored_sentences.append((sentence, score))
-        
-        if not scored_sentences:
-            logger.error("No sentences scored above 0")
-            return []
-        
-        # Sort by score and get top points
-        scored_sentences.sort(key=lambda x: x[1], reverse=True)
-        key_points = []
-        
-        for sentence, score in scored_sentences:
-            if len(key_points) >= num_points:
-                break
-            
-            # Final cleaning
-            point = clean_sentence(sentence)
-            if point and 5 <= len(point.split()) <= 15:  # Must meet length requirements
-                if point not in sentence_cache:  # Check for duplicates
-                    key_points.append(point)
-                    sentence_cache.add(point)
-                    logger.info(f"Added key point (score: {score:.4f}): {point}")
-        
-        if not key_points:
-            logger.error("No key points found after scoring")
-            return []
-        
-        logger.info(f"Successfully extracted {len(key_points)} key points")
+        logger.info(f"Extracted {len(key_points)} key points")
         return key_points
         
     except Exception as e:
-        logger.error(f"Error extracting key points: {str(e)}", exc_info=True)
+        logger.error(f"Error extracting key points: {str(e)}")
         return []
 
-def format_key_points(key_points):
-    """Format key points for presentation slides."""
+def generate_key_points_title(key_points):
+    """Generate a title for the key points using GPT-3.5-turbo."""
     try:
         if not key_points:
-            return []
+            return "Key Business Insights"
             
-        # Group points into slides (5 points per slide)
-        slides = []
-        for i in range(0, len(key_points), 5):
-            group = key_points[i:i+5]
-            slides.append({
-                'title': f'Key Points {i//5 + 1}',
-                'content': [f'• {point}' for point in group]
-            })
+        # Join key points into a single text
+        points_text = "\n".join(f"- {point}" for point in key_points)
+        
+        # Create the prompt
+        system_prompt = """You are an expert at creating concise, business-focused titles.
+        Create a title that captures the main theme of these key points.
+        The title should be 3-6 words and highlight the business value."""
+        
+        user_prompt = f"Create a title for these key points:\n\n{points_text}"
+        
+        # Call GPT-3.5-turbo
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            temperature=0.7,
+            max_tokens=50
+        )
+        
+        title = response.choices[0].message.content.strip().strip('"')
+        return title
+        
+    except Exception as e:
+        logger.error(f"Error generating key points title: {str(e)}")
+        return "Key Business Insights"
+
+def format_key_points(key_points):
+    """Format key points for presentation."""
+    try:
+        if not key_points:
+            return "No key points extracted."
             
-        return slides
+        title = generate_key_points_title(key_points)
+        formatted_points = [f"{i+1}. {point}" for i, point in enumerate(key_points)]
+        
+        return f"{title}\n" + "\n".join(formatted_points)
         
     except Exception as e:
         logger.error(f"Error formatting key points: {str(e)}")
-        return []
+        return "Error formatting key points."
 
 if __name__ == '__main__':
     # Test the extractor
@@ -494,5 +342,6 @@ if __name__ == '__main__':
     
     points = extract_key_points(test_transcript)
     print("\nExtracted Key Points:")
+    print(generate_key_points_title(points))
     for i, point in enumerate(points, 1):
         print(f"{i}. {point}")

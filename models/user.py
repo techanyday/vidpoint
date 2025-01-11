@@ -3,10 +3,11 @@ from .database import Database
 import bcrypt
 
 class User:
-    def __init__(self, id=None, email=None, name=None, google_id=None, profile_picture=None,
+    def __init__(self, _id=None, email=None, name=None, google_id=None, profile_picture=None,
                  subscription_plan='free', subscription_end=None, summaries_remaining=3,
                  created_at=None, updated_at=None, password_hash=None):
-        self.id = id
+        print(f"Initializing User with password_hash type: {type(password_hash)}")
+        self.id = _id  # Map MongoDB's _id to id
         self.email = email
         self.name = name
         self.google_id = google_id
@@ -16,50 +17,105 @@ class User:
         self.summaries_remaining = summaries_remaining
         self.created_at = created_at or datetime.utcnow()
         self.updated_at = updated_at or datetime.utcnow()
-        self.password_hash = password_hash
         self._db = Database()
+
+        # Handle password hash
+        if password_hash:
+            print(f"Converting password_hash from {type(password_hash)}")
+            if isinstance(password_hash, bytes):
+                self.password_hash = password_hash.decode('utf-8')
+            elif isinstance(password_hash, str):
+                self.password_hash = password_hash
+            else:
+                print(f"Unexpected password_hash type: {type(password_hash)}")
+                self.password_hash = None
+            print(f"Final password_hash type: {type(self.password_hash)}")
+        else:
+            self.password_hash = None
 
     def set_password(self, password):
         """Hash and set the user's password"""
         if not password:
             raise ValueError("Password cannot be empty")
-        self.password_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
-        self.save()
+        print(f"Setting password for user {self.email}")
+        
+        # Generate salt and hash password
+        salt = bcrypt.gensalt()
+        print(f"Generated salt type: {type(salt)}")
+        password_bytes = password.encode('utf-8')
+        print(f"Password bytes type: {type(password_bytes)}")
+        hashed = bcrypt.hashpw(password_bytes, salt)
+        print(f"Generated hash type: {type(hashed)}")
+        
+        # Store hash as string
+        self.password_hash = hashed.decode('utf-8')
+        print(f"Stored hash type: {type(self.password_hash)}")
 
     def check_password(self, password):
         """Check if the provided password matches the stored hash"""
         if not self.password_hash:
+            print("No password hash found")
             return False
-        return bcrypt.checkpw(password.encode('utf-8'), self.password_hash)
+            
+        print(f"Checking password for user {self.email}")
+        print(f"Stored hash type: {type(self.password_hash)}")
+        
+        try:
+            # Convert password to bytes
+            password_bytes = password.encode('utf-8')
+            print(f"Password bytes type: {type(password_bytes)}")
+            
+            # Convert stored hash to bytes
+            stored_hash_bytes = self.password_hash.encode('utf-8')
+            print(f"Stored hash bytes type: {type(stored_hash_bytes)}")
+            
+            # Check password
+            result = bcrypt.checkpw(password_bytes, stored_hash_bytes)
+            print(f"Password check result: {result}")
+            return result
+            
+        except Exception as e:
+            print(f"Error checking password: {str(e)}")
+            return False
 
     @classmethod
     def get_by_email(cls, email):
         db = Database()
+        print(f"Looking up user by email: {email}")
         user_data = db.find_one('users', {'email': email})
         if user_data:
+            print(f"Found user data: {user_data}")
             return cls(**user_data)
+        print("No user found with that email")
         return None
 
     @classmethod
     def get_by_id(cls, user_id):
         db = Database()
+        print(f"Looking up user by id: {user_id}")
         user_data = db.find_one('users', {'_id': user_id})
         if user_data:
+            print(f"Found user data: {user_data}")
             return cls(**user_data)
+        print("No user found with that id")
         return None
 
     @classmethod
     def create(cls, email, name=None, google_id=None, profile_picture=None):
+        print(f"Creating new user with email: {email}")
         user = cls(
             email=email,
             name=name,
             google_id=google_id,
-            profile_picture=profile_picture
+            profile_picture=profile_picture,
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow()
         )
-        user.save()
         return user
 
     def save(self):
+        """Save user to database"""
+        print(f"Saving user {self.email}")
         self.updated_at = datetime.utcnow()
         user_data = {
             'email': self.email,
@@ -74,12 +130,21 @@ class User:
             'password_hash': self.password_hash
         }
         
+        print(f"User data to save:")
+        for key, value in user_data.items():
+            print(f"  {key}: {type(value)}")
+        
         if self.id:
+            print(f"Updating existing user with id: {self.id}")
             self._db.update_one('users', {'_id': self.id}, user_data)
         else:
+            print("Creating new user")
             self.id = self._db.insert_one('users', user_data)
+            print(f"Created user with id: {self.id}")
 
     def update(self, **kwargs):
+        """Update user attributes"""
+        print(f"Updating user {self.email} with {kwargs}")
         for key, value in kwargs.items():
             if hasattr(self, key):
                 setattr(self, key, value)

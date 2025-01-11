@@ -1,7 +1,7 @@
 from youtube_downloader import download_audio
 from transcription import transcribe_audio
-from gpt_summarization import generate_summary_with_bart
-from google_slides_generator import create_slides
+from gpt_summarization import generate_summary
+from key_points_extractor import extract_key_points
 import logging
 import traceback
 
@@ -10,43 +10,65 @@ logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 def process_youtube_video(url):
+    """Process a YouTube video URL through the complete workflow."""
     try:
-        # Step 1: Download audio
+        # Download audio
         logger.info("Downloading audio from YouTube...")
         audio_file = download_audio(url)
-        logger.info(f"Audio downloaded successfully to {audio_file}")
+        if not audio_file:
+            return {"error": "Failed to download audio"}
 
-        # Step 2: Transcribe audio
-        logger.info("Transcribing audio...")
+        # Transcribe audio
+        logger.info("\nTranscribing audio...")
         transcript = transcribe_audio(audio_file)
-        logger.info("Transcription complete")
+        if not transcript:
+            return {"error": "Failed to transcribe audio"}
+        
+        # Generate transcript title
+        transcript_title = "Video Transcript: " + transcript[:50].strip() + "..."
 
-        # Step 3: Generate summary using BART
-        logger.info("Generating summary with BART...")
-        summary = generate_summary_with_bart(transcript)
-        logger.info("Summary generated")
+        # Generate summary
+        logger.info("\nGenerating summary...")
+        summary = generate_summary(transcript)
+        if not summary:
+            return {"error": "Failed to generate summary"}
 
-        # Step 4: Create Google Slides presentation
-        logger.info("Creating Google Slides presentation...")
-        try:
-            presentation_url = create_slides("Video Summary", summary)
-            logger.info(f"Presentation created: {presentation_url}")
-        except Exception as e:
-            logger.error(f"Error creating presentation: {str(e)}")
-            logger.error(traceback.format_exc())
-            presentation_url = None
+        # Extract key points
+        logger.info("\nExtracting key points...")
+        key_points = extract_key_points(transcript)
+        if not key_points:
+            return {"error": "Failed to extract key points"}
 
-        return {
-            "transcript": transcript,
-            "summary": summary,
-            "presentation_url": presentation_url
+        # Format results
+        results = {
+            "transcript": {
+                "title": transcript_title,
+                "content": transcript
+            },
+            "summary": summary,  # Already has title and content
+            "key_points": key_points  # Already has title and points
         }
+
+        logger.info("\nResults:\n")
+        logger.info(f"\n{results['transcript']['title']}")
+        logger.info(results['transcript']['content'])
+        
+        logger.info(f"\n{results['summary']['title']}")
+        logger.info(results['summary']['content'])
+        
+        logger.info(f"\n{results['key_points']['title']}")
+        for i, point in enumerate(results['key_points']['points'], 1):
+            logger.info(f"{i}. {point}")
+
+        return results
+
     except Exception as e:
         logger.error(f"Error processing video: {str(e)}")
         logger.error(traceback.format_exc())
         return {"error": str(e)}
 
 if __name__ == "__main__":
+    # Test with a short video first
     video_url = "https://youtu.be/75i0tiz49MA?si=F7S4YpI5X1cgrNro"
     result = process_youtube_video(video_url)
     print("\nResults:")
@@ -54,11 +76,12 @@ if __name__ == "__main__":
         print(f"Error: {result['error']}")
     else:
         print("\nTranscript:")
-        print(result["transcript"])
+        print(result["transcript"]["title"])
+        print(result["transcript"]["content"])
         print("\nSummary:")
-        print(result["summary"])
-        if result["presentation_url"]:
-            print("\nPresentation URL:")
-            print(result["presentation_url"])
-        else:
-            print("\nFailed to create presentation")
+        print(result["summary"]["title"])
+        print(result["summary"]["content"])
+        print("\nKey Points:")
+        print(result["key_points"]["title"])
+        for i, point in enumerate(result["key_points"]["points"], 1):
+            print(f"{i}. {point}")
