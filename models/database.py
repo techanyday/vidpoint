@@ -20,7 +20,15 @@ class Database:
             
             print(f"Connecting to MongoDB...")
             try:
-                client = MongoClient(mongodb_uri, serverSelectionTimeoutMS=5000)
+                client = MongoClient(
+                    mongodb_uri,
+                    serverSelectionTimeoutMS=5000,
+                    ssl=True,
+                    ssl_cert_reqs='CERT_REQUIRED',
+                    connect=True,
+                    retryWrites=True,
+                    w='majority'
+                )
                 # Test connection
                 client.server_info()
                 print("Successfully connected to MongoDB")

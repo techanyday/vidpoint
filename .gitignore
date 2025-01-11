@@ -64,3 +64,4 @@ package-lock.json
 token.pickle
 *.pickle
 python311_installer.exe
+token.json
