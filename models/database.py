@@ -12,16 +12,21 @@ class Database:
         if cls._instance is None:
             cls._instance = super(Database, cls).__new__(cls)
             # Initialize MongoDB connection
-            mongodb_uri = os.environ.get('MONGODB_URI', 'mongodb://localhost:27017')
-            print(f"Connecting to MongoDB at: {mongodb_uri}")
+            mongodb_uri = os.environ.get('MONGODB_URI')
+            if not mongodb_uri:
+                # Fallback to localhost only in development
+                mongodb_uri = 'mongodb://localhost:27017/vidpoint'
+                print("Warning: Using localhost MongoDB. Set MONGODB_URI for production.")
+            
+            print(f"Connecting to MongoDB...")
             try:
-                client = MongoClient(mongodb_uri)
+                client = MongoClient(mongodb_uri, serverSelectionTimeoutMS=5000)
                 # Test connection
                 client.server_info()
                 print("Successfully connected to MongoDB")
                 cls._instance.client = client
-                cls._instance.db = client.vidpoint
-                print("Using database: vidpoint")
+                cls._instance.db = client.get_database()
+                print(f"Using database: {cls._instance.db.name}")
                 
                 # Initialize database and collections
                 cls._instance._init_database()
