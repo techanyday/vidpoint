@@ -4,9 +4,8 @@ from document_exporter import export_to_word, export_to_pdf
 from models.database import Database
 from models.user import User
 from config.pricing import PRICING_PLANS, CREDIT_PACKAGES
-from auth import auth
-from payments import payments
-from routes import auth, dashboard, payments, test_email
+from auth import auth as auth_blueprint
+from routes import dashboard, payments, test_email
 import os
 import logging
 from datetime import datetime
@@ -30,7 +29,7 @@ app.config['PAYSTACK_SECRET_KEY'] = os.environ.get('PAYSTACK_SECRET_KEY')
 app.config['PAYSTACK_PUBLIC_KEY'] = os.environ.get('PAYSTACK_PUBLIC_KEY')
 
 # Register blueprints
-app.register_blueprint(auth.bp)
+app.register_blueprint(auth_blueprint.bp)
 app.register_blueprint(dashboard.bp)
 app.register_blueprint(payments.bp)
 app.register_blueprint(test_email.bp)
