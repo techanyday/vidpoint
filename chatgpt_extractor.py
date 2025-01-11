@@ -14,11 +14,8 @@ class ChatGPTExtractor:
         if not self.api_key:
             raise ValueError("OpenAI API key is required")
         
-        self.client = openai.OpenAI(
-            api_key=self.api_key,
-            base_url="https://api.openai.com/v1"
-        )
-        
+        openai.api_key = self.api_key
+
     def generate_title(self, text: str, content_type: str) -> str:
         """Generate an engaging title for the content."""
         try:
@@ -46,7 +43,7 @@ class ChatGPTExtractor:
                 {text}"""
             
             # Call ChatGPT API
-            response = self.client.chat.completions.create(
+            response = openai.ChatCompletion.create(
                 model="gpt-3.5-turbo",
                 messages=[
                     {"role": "system", "content": "You are a professional content writer that creates engaging, concise titles."},
@@ -82,7 +79,7 @@ class ChatGPTExtractor:
             {transcript}"""
             
             # Call ChatGPT API
-            response = self.client.chat.completions.create(
+            response = openai.ChatCompletion.create(
                 model="gpt-3.5-turbo",
                 messages=[
                     {"role": "system", "content": "You are a professional content analyzer that extracts key points from video transcripts. Format all points as bullet points starting with a hyphen (-)"},
@@ -149,7 +146,7 @@ class ChatGPTExtractor:
             {transcript}"""
             
             # Call ChatGPT API
-            response = self.client.chat.completions.create(
+            response = openai.ChatCompletion.create(
                 model="gpt-3.5-turbo",
                 messages=[
                     {"role": "system", "content": "You are a professional content summarizer that creates concise, engaging summaries."},
