@@ -54,10 +54,13 @@ def login_required(f):
 @app.route('/')
 def index():
     """Render the main page."""
+    user = None
+    if 'user_email' in session:
+        user = User.get_by_email(session.get('user_email'))
     return render_template('index.html', 
+                         user=user,
                          pricing_plans=PRICING_PLANS,
-                         credit_packages=CREDIT_PACKAGES,
-                         user=db.get_user(session.get("user_email")))
+                         credit_packages=CREDIT_PACKAGES)
 
 @app.route('/register', methods=['POST'])
 def register():
@@ -66,16 +69,30 @@ def register():
         data = request.get_json()
         email = data.get('email')
         password = data.get('password')
+        name = data.get('name')
         
         if not email or not password:
             return jsonify({"error": "Email and password required"}), 400
             
-        user = db.create_user(email, password)
-        if not user:
+        # Check if user already exists
+        existing_user = User.get_by_email(email)
+        if existing_user:
             return jsonify({"error": "Email already registered"}), 400
             
+        # Create new user
+        user = User.create(email=email, name=name)
+        user.set_password(password)
+        user.save()
+            
         session["user_email"] = email
-        return jsonify({"message": "Registration successful"})
+        return jsonify({
+            "message": "Registration successful",
+            "user": {
+                "email": user.email,
+                "name": user.name,
+                "subscription_plan": user.subscription_plan
+            }
+        })
         
     except Exception as e:
         logger.error(f"Registration error: {str(e)}")
@@ -89,12 +106,22 @@ def login():
         email = data.get('email')
         password = data.get('password')
         
-        user = db.get_user(email)
+        if not email or not password:
+            return jsonify({"error": "Email and password required"}), 400
+            
+        user = User.get_by_email(email)
         if not user or not user.check_password(password):
             return jsonify({"error": "Invalid email or password"}), 401
             
         session["user_email"] = email
-        return jsonify({"message": "Login successful"})
+        return jsonify({
+            "message": "Login successful",
+            "user": {
+                "email": user.email,
+                "name": user.name,
+                "subscription_plan": user.subscription_plan
+            }
+        })
         
     except Exception as e:
         logger.error(f"Login error: {str(e)}")

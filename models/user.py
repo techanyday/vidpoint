@@ -1,10 +1,11 @@
 from datetime import datetime
 from .database import Database
+import bcrypt
 
 class User:
     def __init__(self, id=None, email=None, name=None, google_id=None, profile_picture=None,
                  subscription_plan='free', subscription_end=None, summaries_remaining=3,
-                 created_at=None, updated_at=None):
+                 created_at=None, updated_at=None, password_hash=None):
         self.id = id
         self.email = email
         self.name = name
@@ -15,7 +16,21 @@ class User:
         self.summaries_remaining = summaries_remaining
         self.created_at = created_at or datetime.utcnow()
         self.updated_at = updated_at or datetime.utcnow()
+        self.password_hash = password_hash
         self._db = Database()
+
+    def set_password(self, password):
+        """Hash and set the user's password"""
+        if not password:
+            raise ValueError("Password cannot be empty")
+        self.password_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
+        self.save()
+
+    def check_password(self, password):
+        """Check if the provided password matches the stored hash"""
+        if not self.password_hash:
+            return False
+        return bcrypt.checkpw(password.encode('utf-8'), self.password_hash)
 
     @classmethod
     def get_by_email(cls, email):
@@ -55,7 +70,8 @@ class User:
             'subscription_end': self.subscription_end,
             'summaries_remaining': self.summaries_remaining,
             'created_at': self.created_at,
-            'updated_at': self.updated_at
+            'updated_at': self.updated_at,
+            'password_hash': self.password_hash
         }
         
         if self.id:
