@@ -27,10 +27,10 @@ google-auth-oauthlib==1.1.0
 # Payment Processing
 squareup==39.1.0.20241218
 requests==2.31.0
-pymongo==4.6.1
 
 # Database
-# MongoDB and SSL
+# MongoDB and DNS
+pymongo==4.6.1
 dnspython==2.4.2
 certifi==2023.7.22
 pyOpenSSL==23.2.0
