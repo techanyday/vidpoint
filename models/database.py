@@ -1,6 +1,7 @@
 """Database interface for VidPoint."""
 import json
 import os
+import ssl
 from pymongo import MongoClient
 from datetime import datetime
 from typing import Optional, Dict, List
@@ -20,12 +21,12 @@ class Database:
             
             print(f"Connecting to MongoDB...")
             try:
+                # Configure MongoDB client with proper SSL settings
                 client = MongoClient(
                     mongodb_uri,
                     serverSelectionTimeoutMS=5000,
-                    ssl=True,
-                    ssl_cert_reqs='CERT_REQUIRED',
-                    connect=True,
+                    tls=True,
+                    tlsAllowInvalidCertificates=False,
                     retryWrites=True,
                     w='majority'
                 )
