@@ -1,4 +1,4 @@
-from flask import redirect, url_for, session, current_app, request, flash
+from flask import redirect, url_for, session, current_app, request, flash, render_template
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
 from google.auth.transport.requests import Request
@@ -8,6 +8,9 @@ import os
 import json
 from . import auth
 from models.user import User
+from models.database import get_db
+from werkzeug.security import generate_password_hash, check_password_hash
+from datetime import datetime, timedelta
 
 # OAuth 2.0 scopes
 SCOPES = [
@@ -24,8 +27,94 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
-@auth.route('/login')
+@auth.route('/register', methods=['GET', 'POST'])
+def register():
+    """Register a new user."""
+    if request.method == 'GET':
+        return render_template('auth/register.html')
+        
+    if request.method == 'POST':
+        db = get_db()
+        
+        # Get form data
+        email = request.form.get('email')
+        password = request.form.get('password')
+        confirm_password = request.form.get('confirm_password')
+        name = request.form.get('name')
+        
+        # Validate form data
+        if not email or not password or not confirm_password or not name:
+            flash('All fields are required.', 'error')
+            return render_template('auth/register.html')
+            
+        if password != confirm_password:
+            flash('Passwords do not match.', 'error')
+            return render_template('auth/register.html')
+            
+        # Check if user already exists
+        existing_user = db.get_user_by_email(email)
+        if existing_user:
+            flash('Email already registered. Please login.', 'error')
+            return redirect(url_for('auth.login'))
+            
+        # Create new user
+        user_data = {
+            'email': email,
+            'password_hash': generate_password_hash(password),
+            'name': name,
+            'created_at': datetime.now(),
+            'subscription': {
+                'plan': 'free',
+                'credits': 3,
+                'start_date': datetime.now(),
+                'end_date': datetime.now() + timedelta(days=30)
+            },
+            'notification_preferences': {
+                'subscription_expiry': True,
+                'low_credits': True,
+                'payment_confirmation': True,
+                'export_complete': True,
+                'promotional': False,
+                'email_digest': 'daily'
+            }
+        }
+        
+        user_id = db.create_user(user_data)
+        if not user_id:
+            flash('Failed to create account. Please try again.', 'error')
+            return render_template('auth/register.html')
+            
+        # Log user in
+        session['user_id'] = str(user_id)
+        flash('Account created successfully!', 'success')
+        return redirect(url_for('dashboard.index'))
+
+@auth.route('/login', methods=['GET', 'POST'])
 def login():
+    """Handle user login."""
+    if request.method == 'GET':
+        return render_template('auth/login.html')
+        
+    if request.method == 'POST':
+        # Handle email/password login
+        email = request.form.get('email')
+        password = request.form.get('password')
+        
+        if not email or not password:
+            flash('Email and password are required.', 'error')
+            return render_template('auth/login.html')
+            
+        db = get_db()
+        user = db.get_user_by_email(email)
+        
+        if not user or not check_password_hash(user.get('password_hash', ''), password):
+            flash('Invalid email or password.', 'error')
+            return render_template('auth/login.html')
+            
+        session['user_id'] = str(user['_id'])
+        flash('Logged in successfully!', 'success')
+        return redirect(url_for('dashboard.index'))
+        
     # Create flow instance to manage the OAuth 2.0 Authorization Grant Flow
     flow = Flow.from_client_config(
         {
@@ -100,47 +189,46 @@ def oauth2callback():
         unique_id = userinfo_response['sub']
         users_email = userinfo_response['email']
         users_name = userinfo_response.get('name', '')
-        picture = userinfo_response.get('picture', '')
-
-        # Create or update user
-        user = User.get_by_email(users_email)
+        
+        # Check if user exists
+        db = get_db()
+        user = db.get_user_by_email(users_email)
+        
         if not user:
-            user = User.create(
-                email=users_email,
-                name=users_name,
-                google_id=unique_id,
-                profile_picture=picture
-            )
+            # Create new user
+            user_data = {
+                'email': users_email,
+                'name': users_name,
+                'google_id': unique_id,
+                'created_at': datetime.now(),
+                'subscription': {
+                    'plan': 'free',
+                    'credits': 3,
+                    'start_date': datetime.now(),
+                    'end_date': datetime.now() + timedelta(days=30)
+                },
+                'notification_preferences': {
+                    'subscription_expiry': True,
+                    'low_credits': True,
+                    'payment_confirmation': True,
+                    'export_complete': True,
+                    'promotional': False,
+                    'email_digest': 'daily'
+                }
+            }
+            user_id = db.create_user(user_data)
         else:
-            user.update(
-                name=users_name,
-                google_id=unique_id,
-                profile_picture=picture
-            )
-
-        # Begin user session
-        session['user_id'] = user.id
-        session['user_email'] = users_email
-        session['user_name'] = users_name
-        session['picture'] = picture
-
-        # Store credentials for future use
-        session['credentials'] = {
-            'token': credentials.token,
-            'refresh_token': credentials.refresh_token,
-            'token_uri': credentials.token_uri,
-            'client_id': credentials.client_id,
-            'client_secret': credentials.client_secret,
-            'scopes': credentials.scopes
-        }
-
-        return redirect(url_for('index'))
+            user_id = user['_id']
+        
+        session['user_id'] = str(user_id)
+        return redirect(url_for('dashboard.index'))
     else:
-        flash('User email not verified by Google.', 'error')
-        return redirect(url_for('index'))
+        flash('Google login failed. Please try again.', 'error')
+        return redirect(url_for('auth.login'))
 
 @auth.route('/logout')
 def logout():
-    # Clear session
+    """Log out the current user."""
     session.clear()
+    flash('Logged out successfully.', 'success')
     return redirect(url_for('index'))
