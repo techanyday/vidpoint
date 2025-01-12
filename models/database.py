@@ -2,7 +2,7 @@
 import json
 import os
 import time
-import certifi
+from urllib.parse import urlparse
 from pymongo import MongoClient, ASCENDING
 from pymongo.errors import ConnectionFailure, ServerSelectionTimeoutError
 from datetime import datetime
@@ -14,25 +14,40 @@ class Database:
     RETRY_DELAY_SECONDS = 5
 
     @classmethod
+    def _get_connection_uri(cls, uri: str) -> str:
+        """Process MongoDB URI to ensure proper format."""
+        if uri.startswith('mongodb+srv://'):
+            # Convert srv URI to standard format
+            parsed = urlparse(uri)
+            auth = parsed.netloc.split('@')[0]
+            cluster = parsed.netloc.split('@')[1]
+            db_name = parsed.path.lstrip('/')
+            
+            # Construct direct connection string with explicit port
+            hosts = [
+                f"{cluster.replace('mongodb.net', 'mongodb.net:27017')}",
+            ]
+            
+            return f"mongodb://{auth}@{','.join(hosts)}/{db_name}?retryWrites=true&w=majority"
+        return uri
+
+    @classmethod
     def _connect_with_retry(cls, uri: str) -> MongoClient:
         """Attempt to connect to MongoDB with retries."""
         last_error = None
+        processed_uri = cls._get_connection_uri(uri)
+        print(f"Connecting with URI (auth removed): {processed_uri.replace(processed_uri.split('@')[0], 'mongodb://[hidden]')}")
         
         for attempt in range(cls.MAX_RETRY_ATTEMPTS):
             try:
                 print(f"MongoDB connection attempt {attempt + 1}/{cls.MAX_RETRY_ATTEMPTS}")
                 
-                # Configure MongoDB client with recommended TLS settings
+                # Use minimal connection settings
                 client = MongoClient(
-                    uri,
-                    tls=True,
-                    tlsAllowInvalidCertificates=True,  # Temporarily allow invalid certs
-                    serverSelectionTimeoutMS=30000,
-                    connectTimeoutMS=30000,
-                    socketTimeoutMS=30000,
-                    retryWrites=True,
-                    maxPoolSize=50,
-                    appname='VidPoint'  # Add application name for monitoring
+                    processed_uri,
+                    connectTimeoutMS=20000,
+                    serverSelectionTimeoutMS=20000,
+                    socketTimeoutMS=20000,
                 )
                 
                 # Test connection with a light command
