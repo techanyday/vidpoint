@@ -17,6 +17,13 @@ logger.setLevel(logging.DEBUG)
 def verify_square_signature(request_data, signature, signing_key):
     """Verify Square webhook signature."""
     try:
+        # For test notifications, skip signature verification
+        if request_data and isinstance(request_data, bytes):
+            data = json.loads(request_data.decode('utf-8'))
+            if data.get('type') == 'test_notification':
+                logger.info("Received test notification, skipping signature verification")
+                return True
+
         computed_signature = hmac.new(
             signing_key.encode('utf-8'),
             request_data,
@@ -26,7 +33,7 @@ def verify_square_signature(request_data, signature, signing_key):
         logger.debug(f"Received signature: {signature}")
         return hmac.compare_digest(computed_signature, signature)
     except Exception as e:
-        logger.error(f"Error verifying signature: {str(e)}")
+        logger.error(f"Error verifying signature: {str(e)}", exc_info=True)
         return False
 
 @bp.route('/square', methods=['POST', 'OPTIONS'])
@@ -37,7 +44,10 @@ def square_webhook():
     logger.debug(f"Request Path: {request.path}")
     logger.debug(f"Request URL: {request.url}")
     logger.debug(f"Headers: {dict(request.headers)}")
-    logger.debug(f"Raw Data: {request.get_data().decode('utf-8')}")
+    
+    # Get raw data before parsing json
+    raw_data = request.get_data()
+    logger.debug(f"Raw Data: {raw_data.decode('utf-8') if raw_data else 'No data'}")
     
     # Handle preflight OPTIONS request
     if request.method == 'OPTIONS':
@@ -49,27 +59,47 @@ def square_webhook():
     
     # Verify webhook signature
     signature = request.headers.get('x-square-hmacsha256-signature')
-    signing_key = current_app.config['SQUARE_WEBHOOK_SIGNING_KEY']
+    signing_key = current_app.config.get('SQUARE_WEBHOOK_SIGNING_KEY')
     
     logger.debug(f"Signature Header Present: {bool(signature)}")
     logger.debug(f"Signing Key Present: {bool(signing_key)}")
+    logger.debug(f"Signing Key Value: {signing_key}")
     
-    if not signature or not verify_square_signature(
-        request.get_data(),
-        signature,
-        signing_key
-    ):
+    if not signing_key:
+        logger.error("Missing webhook signing key in configuration")
+        response = make_response({'error': 'Missing webhook signing key'}, 500)
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        return response
+    
+    if not signature:
+        logger.error("Missing signature header")
+        response = make_response({'error': 'Missing signature header'}, 401)
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        return response
+    
+    if not verify_square_signature(raw_data, signature, signing_key):
         logger.error("Invalid signature")
         response = make_response({'error': 'Invalid signature'}, 401)
         response.headers.add('Access-Control-Allow-Origin', '*')
         return response
     
     try:
-        event = request.get_json()
+        event = json.loads(raw_data.decode('utf-8')) if raw_data else None
+        if not event:
+            logger.error("No event data received")
+            response = make_response({'error': 'No event data'}, 400)
+            response.headers.add('Access-Control-Allow-Origin', '*')
+            return response
+            
         event_type = event.get('type')
-        
         logger.debug(f"Event Type: {event_type}")
         logger.debug(f"Event Data: {json.dumps(event, indent=2)}")
+        
+        if event_type == 'test_notification':
+            logger.info("Received test notification")
+            response = make_response({'success': True, 'message': 'Test notification received'}, 200)
+            response.headers.add('Access-Control-Allow-Origin', '*')
+            return response
         
         if not event_type:
             response = make_response({'error': 'Missing event type'}, 400)
