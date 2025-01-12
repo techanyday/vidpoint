@@ -3,7 +3,7 @@ import hmac
 import hashlib
 import json
 import logging
-from flask import Blueprint, request, current_app
+from flask import Blueprint, request, current_app, make_response
 from models.database import get_db
 from notifications.notification_service import NotificationService
 
@@ -29,7 +29,7 @@ def verify_square_signature(request_data, signature, signing_key):
         logger.error(f"Error verifying signature: {str(e)}")
         return False
 
-@bp.route('/square', methods=['POST'])
+@bp.route('/square', methods=['POST', 'OPTIONS'])
 def square_webhook():
     """Handle Square payment notifications."""
     logger.debug("=== Square Webhook Request ===")
@@ -38,6 +38,14 @@ def square_webhook():
     logger.debug(f"Request URL: {request.url}")
     logger.debug(f"Headers: {dict(request.headers)}")
     logger.debug(f"Raw Data: {request.get_data().decode('utf-8')}")
+    
+    # Handle preflight OPTIONS request
+    if request.method == 'OPTIONS':
+        response = make_response()
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type,x-square-hmacsha256-signature')
+        response.headers.add('Access-Control-Allow-Methods', 'POST,OPTIONS')
+        return response
     
     # Verify webhook signature
     signature = request.headers.get('x-square-hmacsha256-signature')
@@ -52,7 +60,9 @@ def square_webhook():
         signing_key
     ):
         logger.error("Invalid signature")
-        return {'error': 'Invalid signature'}, 401
+        response = make_response({'error': 'Invalid signature'}, 401)
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        return response
     
     try:
         event = request.get_json()
@@ -62,7 +72,9 @@ def square_webhook():
         logger.debug(f"Event Data: {json.dumps(event, indent=2)}")
         
         if not event_type:
-            return {'error': 'Missing event type'}, 400
+            response = make_response({'error': 'Missing event type'}, 400)
+            response.headers.add('Access-Control-Allow-Origin', '*')
+            return response
         
         db = get_db()
         
@@ -162,9 +174,13 @@ def square_webhook():
                     )
                     logger.info(f"Processed refund of {credits} credits for user {user_id}")
         
-        logger.debug("=== Webhook Processing Complete ===")
-        return {'success': True}, 200
+        # Add CORS headers to response
+        response = make_response({'success': True}, 200)
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        return response
         
     except Exception as e:
         logger.error(f"Webhook Error: {str(e)}", exc_info=True)
-        return {'error': 'Internal server error'}, 500
+        response = make_response({'error': 'Internal server error'}, 500)
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        return response
