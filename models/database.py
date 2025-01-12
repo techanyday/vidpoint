@@ -2,7 +2,7 @@
 import json
 import os
 import time
-import certifi
+import ssl
 from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure, ServerSelectionTimeoutError
 from datetime import datetime
@@ -22,14 +22,16 @@ class Database:
             try:
                 print(f"MongoDB connection attempt {attempt + 1}/{cls.MAX_RETRY_ATTEMPTS}")
                 
-                # Configure MongoDB client with minimal options
+                # Configure MongoDB client with Atlas recommended settings
                 client = MongoClient(
                     uri,
-                    tlsCAFile=certifi.where(),
+                    ssl=True,
+                    ssl_cert_reqs=ssl.CERT_NONE,  # Disable certificate verification temporarily
                     serverSelectionTimeoutMS=30000,
                     connectTimeoutMS=30000,
                     socketTimeoutMS=30000,
-                    retryWrites=True
+                    retryWrites=True,
+                    maxPoolSize=50
                 )
                 
                 # Test connection with a light command
