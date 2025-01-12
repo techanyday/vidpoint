@@ -17,6 +17,14 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 
+def add_cors_headers(response):
+    """Add CORS headers to response."""
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    response.headers.add('Access-Control-Allow-Headers', '*')
+    response.headers.add('Access-Control-Allow-Methods', 'POST, OPTIONS')
+    response.headers.add('Access-Control-Expose-Headers', '*')
+    return response
+
 def verify_square_signature(request_data, signature, signing_key):
     """Verify Square webhook signature."""
     try:
@@ -42,6 +50,7 @@ def verify_square_signature(request_data, signature, signing_key):
         try:
             if isinstance(request_data, bytes):
                 data = json.loads(request_data.decode('utf-8'))
+                logger.debug(f"Parsed request data: {json.dumps(data, indent=2)}")
                 if data.get('type') == 'test_notification':
                     logger.info("Test notification detected, skipping signature verification")
                     return True
@@ -57,6 +66,7 @@ def verify_square_signature(request_data, signature, signing_key):
         ).hexdigest()
         
         logger.debug(f"Computed Signature: {computed_signature}")
+        logger.debug(f"Received Signature: {signature}")
         
         # Compare signatures
         signatures_match = hmac.compare_digest(computed_signature, signature)
@@ -83,10 +93,7 @@ def square_webhook():
     # Handle preflight OPTIONS request
     if request.method == 'OPTIONS':
         response = make_response()
-        response.headers.add('Access-Control-Allow-Origin', '*')
-        response.headers.add('Access-Control-Allow-Headers', 'Content-Type,x-square-hmacsha256-signature')
-        response.headers.add('Access-Control-Allow-Methods', 'POST,OPTIONS')
-        return response
+        return add_cors_headers(response)
     
     # Get webhook signing key from config
     signing_key = current_app.config.get('SQUARE_WEBHOOK_SIGNING_KEY')
@@ -95,8 +102,7 @@ def square_webhook():
     if not signing_key:
         logger.error("Missing webhook signing key in configuration")
         response = make_response({'error': 'Missing webhook signing key'}, 500)
-        response.headers.add('Access-Control-Allow-Origin', '*')
-        return response
+        return add_cors_headers(response)
     
     # Get signature from headers
     signature = request.headers.get('x-square-hmacsha256-signature')
@@ -105,15 +111,13 @@ def square_webhook():
     if not signature:
         logger.error("Missing signature header")
         response = make_response({'error': 'Missing signature header'}, 401)
-        response.headers.add('Access-Control-Allow-Origin', '*')
-        return response
+        return add_cors_headers(response)
     
     # Verify signature
     if not verify_square_signature(raw_data, signature, signing_key):
         logger.error("Invalid signature")
         response = make_response({'error': 'Invalid signature'}, 401)
-        response.headers.add('Access-Control-Allow-Origin', '*')
-        return response
+        return add_cors_headers(response)
     
     try:
         # Parse request data
@@ -121,8 +125,7 @@ def square_webhook():
         if not event:
             logger.error("No event data received")
             response = make_response({'error': 'No event data'}, 400)
-            response.headers.add('Access-Control-Allow-Origin', '*')
-            return response
+            return add_cors_headers(response)
             
         event_type = event.get('type')
         logger.debug(f"Event Type: {event_type}")
@@ -135,13 +138,11 @@ def square_webhook():
                 'success': True,
                 'message': 'Test notification received and verified'
             }, 200)
-            response.headers.add('Access-Control-Allow-Origin', '*')
-            return response
+            return add_cors_headers(response)
         
         if not event_type:
             response = make_response({'error': 'Missing event type'}, 400)
-            response.headers.add('Access-Control-Allow-Origin', '*')
-            return response
+            return add_cors_headers(response)
         
         db = get_db()
         
@@ -243,11 +244,9 @@ def square_webhook():
         
         # Add CORS headers to response
         response = make_response({'success': True}, 200)
-        response.headers.add('Access-Control-Allow-Origin', '*')
-        return response
+        return add_cors_headers(response)
         
     except Exception as e:
         logger.error(f"Webhook Error: {str(e)}", exc_info=True)
         response = make_response({'error': 'Internal server error'}, 500)
-        response.headers.add('Access-Control-Allow-Origin', '*')
-        return response
+        return add_cors_headers(response)
