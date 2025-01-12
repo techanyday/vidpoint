@@ -2,8 +2,7 @@
 import json
 import os
 import time
-import socket
-import dns.resolver
+import certifi
 from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure, ServerSelectionTimeoutError
 from datetime import datetime
@@ -15,65 +14,21 @@ class Database:
     RETRY_DELAY_SECONDS = 5
 
     @classmethod
-    def _resolve_mongodb_host(cls, hostname: str) -> str:
-        """Resolve MongoDB hostname to IP address."""
-        try:
-            # Try direct DNS resolution first
-            ip_address = socket.gethostbyname(hostname)
-            print(f"Resolved {hostname} to {ip_address} using socket")
-            return ip_address
-        except socket.gaierror:
-            try:
-                # Fallback to explicit DNS resolver
-                resolver = dns.resolver.Resolver()
-                # Use Google's DNS servers as fallback
-                resolver.nameservers = ['8.8.8.8', '8.8.4.4']
-                answers = resolver.resolve(hostname, 'A')
-                ip_address = answers[0].address
-                print(f"Resolved {hostname} to {ip_address} using DNS resolver")
-                return ip_address
-            except Exception as e:
-                print(f"DNS resolution failed: {str(e)}")
-                return hostname
-
-    @classmethod
-    def _get_connection_uri(cls, uri: str) -> str:
-        """Process MongoDB URI to ensure reliable connection."""
-        if uri.startswith('mongodb+srv://'):
-            print("Converting srv URI to direct connection...")
-            # Extract credentials and host
-            parts = uri.replace('mongodb+srv://', '').split('@')
-            if len(parts) == 2:
-                auth, host = parts
-                cluster = host.split('/')[0]
-                rest = '/'.join(host.split('/')[1:])
-                
-                # Resolve IP address
-                ip = cls._resolve_mongodb_host(cluster)
-                print(f"Using IP address: {ip}")
-                
-                # Construct direct connection URI
-                return f'mongodb://{auth}@{ip}:27017/{rest}'
-        return uri
-
-    @classmethod
     def _connect_with_retry(cls, uri: str) -> MongoClient:
         """Attempt to connect to MongoDB with retries."""
         last_error = None
-        processed_uri = cls._get_connection_uri(uri)
         
         for attempt in range(cls.MAX_RETRY_ATTEMPTS):
             try:
                 print(f"MongoDB connection attempt {attempt + 1}/{cls.MAX_RETRY_ATTEMPTS}")
                 
-                # Configure MongoDB client with retries and timeouts
+                # Configure MongoDB client with minimal options
                 client = MongoClient(
-                    processed_uri,
-                    directConnection=True,
-                    serverSelectionTimeoutMS=5000,
-                    connectTimeoutMS=5000,
-                    socketTimeoutMS=10000,
-                    maxPoolSize=1,
+                    uri,
+                    tlsCAFile=certifi.where(),
+                    serverSelectionTimeoutMS=30000,
+                    connectTimeoutMS=30000,
+                    socketTimeoutMS=30000,
                     retryWrites=True
                 )
                 
