@@ -5,7 +5,7 @@ from models.database import Database
 from models.user import User
 from config.pricing import PRICING_PLANS, CREDIT_PACKAGES
 from auth import auth as auth_blueprint
-from routes import dashboard, payments, test_email
+from routes import dashboard, payments, test_email, webhooks
 import os
 import logging
 from datetime import datetime
@@ -21,12 +21,14 @@ app.config['GOOGLE_CLIENT_ID'] = os.environ.get('GOOGLE_CLIENT_ID')
 app.config['GOOGLE_CLIENT_SECRET'] = os.environ.get('GOOGLE_CLIENT_SECRET')
 app.config['PAYSTACK_SECRET_KEY'] = os.environ.get('PAYSTACK_SECRET_KEY')
 app.config['PAYSTACK_PUBLIC_KEY'] = os.environ.get('PAYSTACK_PUBLIC_KEY')
+app.config['SQUARE_WEBHOOK_SIGNING_KEY'] = os.environ.get('SQUARE_WEBHOOK_SIGNING_KEY')
 
 # Register blueprints
 app.register_blueprint(auth_blueprint)
 app.register_blueprint(dashboard.bp)
 app.register_blueprint(payments.bp)
 app.register_blueprint(test_email.bp)
+app.register_blueprint(webhooks.bp)
 
 @app.context_processor
 def inject_user():
