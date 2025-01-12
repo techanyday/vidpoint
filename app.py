@@ -4,6 +4,7 @@ from document_exporter import export_to_word, export_to_pdf
 from models.database import Database
 from models.user import User
 from config.pricing import PRICING_PLANS, CREDIT_PACKAGES
+from config import SQUARE_CONFIG, FLASK_CONFIG, validate_config
 from auth import auth as auth_blueprint
 from routes import dashboard, payments, test_email, webhooks
 import os
@@ -15,13 +16,18 @@ from functools import wraps
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Validate configuration
+validate_config()
+
 app = Flask(__name__)
-app.config['SECRET_KEY'] = os.environ.get('FLASK_SECRET_KEY')
+app.config['SECRET_KEY'] = FLASK_CONFIG['secret_key']
 app.config['GOOGLE_CLIENT_ID'] = os.environ.get('GOOGLE_CLIENT_ID')
 app.config['GOOGLE_CLIENT_SECRET'] = os.environ.get('GOOGLE_CLIENT_SECRET')
 app.config['PAYSTACK_SECRET_KEY'] = os.environ.get('PAYSTACK_SECRET_KEY')
 app.config['PAYSTACK_PUBLIC_KEY'] = os.environ.get('PAYSTACK_PUBLIC_KEY')
-app.config['SQUARE_WEBHOOK_SIGNING_KEY'] = os.environ.get('SQUARE_WEBHOOK_SIGNING_KEY')
+
+# Square configuration
+app.config['SQUARE_WEBHOOK_SIGNING_KEY'] = SQUARE_CONFIG['webhook_signing_key']
 
 # Register blueprints
 app.register_blueprint(auth_blueprint)
