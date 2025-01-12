@@ -2,8 +2,8 @@
 import json
 import os
 import time
-import ssl
-from pymongo import MongoClient
+import certifi
+from pymongo import MongoClient, ASCENDING
 from pymongo.errors import ConnectionFailure, ServerSelectionTimeoutError
 from datetime import datetime
 from typing import Optional, Dict, List
@@ -22,16 +22,17 @@ class Database:
             try:
                 print(f"MongoDB connection attempt {attempt + 1}/{cls.MAX_RETRY_ATTEMPTS}")
                 
-                # Configure MongoDB client with Atlas recommended settings
+                # Configure MongoDB client with recommended TLS settings
                 client = MongoClient(
                     uri,
-                    ssl=True,
-                    ssl_cert_reqs=ssl.CERT_NONE,  # Disable certificate verification temporarily
+                    tls=True,
+                    tlsAllowInvalidCertificates=True,  # Temporarily allow invalid certs
                     serverSelectionTimeoutMS=30000,
                     connectTimeoutMS=30000,
                     socketTimeoutMS=30000,
                     retryWrites=True,
-                    maxPoolSize=50
+                    maxPoolSize=50,
+                    appname='VidPoint'  # Add application name for monitoring
                 )
                 
                 # Test connection with a light command
@@ -74,57 +75,15 @@ class Database:
         return cls._instance
 
     def _init_database(self):
-        """Initialize database and collections with indexes."""
+        """Initialize database collections and indexes."""
         try:
-            # Create collections if they don't exist
-            if 'users' not in self.db.list_collection_names():
-                print("Creating users collection")
-                self.db.create_collection('users')
-                # Create indexes
-                self.db.users.create_index('email', unique=True)
-                print("Created index on users.email")
-
-            if 'transactions' not in self.db.list_collection_names():
-                print("Creating transactions collection")
-                self.db.create_collection('transactions')
-                # Create indexes
-                self.db.transactions.create_index('user_id')
-                self.db.transactions.create_index('invoice_id', unique=True)
-                print("Created indexes on transactions collection")
-
-            if 'notifications' not in self.db.list_collection_names():
-                print("Creating notifications collection")
-                self.db.create_collection('notifications')
-                # Create indexes
-                self.db.notifications.create_index('user_id')
-                self.db.notifications.create_index('sent_at')
-                print("Created indexes on notifications collection")
-
-            if 'subscriptions' not in self.db.list_collection_names():
-                print("Creating subscriptions collection")
-                self.db.create_collection('subscriptions')
-                # Create indexes
-                self.db.subscriptions.create_index('user_id', unique=True)
-                print("Created index on subscriptions.user_id")
-
-            if 'credits' not in self.db.list_collection_names():
-                print("Creating credits collection")
-                self.db.create_collection('credits')
-                # Create indexes
-                self.db.credits.create_index('user_id', unique=True)
-                print("Created index on credits.user_id")
-
-            if 'video_exports' not in self.db.list_collection_names():
-                print("Creating video_exports collection")
-                self.db.create_collection('video_exports')
-                # Create indexes
-                self.db.video_exports.create_index('user_id')
-                self.db.video_exports.create_index('created_at')
-                print("Created indexes on video_exports collection")
-
-            print("Database initialization complete")
+            # Create indexes for various collections
+            self.db.videos.create_index([("video_id", ASCENDING)], unique=True)
+            self.db.transcripts.create_index([("video_id", ASCENDING)], unique=True)
+            self.db.summaries.create_index([("video_id", ASCENDING)], unique=True)
+            print("Database indexes created successfully")
         except Exception as e:
-            print(f"Error initializing database: {str(e)}")
+            print(f"Error creating database indexes: {str(e)}")
             raise
 
     def insert_one(self, collection, document):
