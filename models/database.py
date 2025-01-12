@@ -4,7 +4,7 @@ import os
 import time
 from urllib.parse import urlparse
 from pymongo import MongoClient, ASCENDING
-from pymongo.errors import ConnectionFailure, ServerSelectionTimeoutError
+from pymongo.errors import ConnectionFailure, ServerSelectionTimeoutError, OperationFailure
 from datetime import datetime
 from typing import Optional, Dict, List
 
@@ -35,8 +35,6 @@ class Database:
     def _connect_with_retry(cls, uri: str) -> MongoClient:
         """Attempt to connect to MongoDB with retries."""
         last_error = None
-        processed_uri = cls._get_connection_uri(uri)
-        print(f"Connecting with URI (auth removed): {processed_uri.replace(processed_uri.split('@')[0], 'mongodb://[hidden]')}")
         
         for attempt in range(cls.MAX_RETRY_ATTEMPTS):
             try:
@@ -44,10 +42,11 @@ class Database:
                 
                 # Use minimal connection settings
                 client = MongoClient(
-                    processed_uri,
+                    uri,
                     connectTimeoutMS=20000,
                     serverSelectionTimeoutMS=20000,
                     socketTimeoutMS=20000,
+                    retryWrites=True
                 )
                 
                 # Test connection with a light command
@@ -57,10 +56,23 @@ class Database:
                 
             except (ConnectionFailure, ServerSelectionTimeoutError) as e:
                 last_error = e
+                error_msg = str(e).lower()
+                
+                if "unauthorized" in error_msg:
+                    raise ConnectionFailure("Authentication failed. Please check your MongoDB username and password.")
+                elif "network" in error_msg or "timeout" in error_msg:
+                    print("Network error or timeout. This might be due to IP access restrictions.")
+                    print("Please ensure your IP is whitelisted in MongoDB Atlas Network Access settings.")
+                    print("For Render deployment, you may need to allow access from anywhere (0.0.0.0/0)")
+                
                 print(f"Connection attempt {attempt + 1} failed: {str(e)}")
                 if attempt < cls.MAX_RETRY_ATTEMPTS - 1:
                     print(f"Retrying in {cls.RETRY_DELAY_SECONDS} seconds...")
                     time.sleep(cls.RETRY_DELAY_SECONDS)
+            except OperationFailure as e:
+                if e.code == 8000:
+                    raise ConnectionFailure("Wrong database or user. Please check your MongoDB credentials.")
+                raise
                     
         raise ConnectionFailure(f"Failed to connect after {cls.MAX_RETRY_ATTEMPTS} attempts. Last error: {str(last_error)}")
 
@@ -85,6 +97,11 @@ class Database:
                 cls._instance._init_database()
             except Exception as e:
                 print(f"Error initializing database: {str(e)}")
+                print("\nTroubleshooting steps:")
+                print("1. Check if your IP is whitelisted in MongoDB Atlas")
+                print("2. Verify your MongoDB URI is correct")
+                print("3. Ensure your username and password are correct")
+                print("4. For deployment, allow access from anywhere (0.0.0.0/0) in Atlas")
                 raise
                 
         return cls._instance
