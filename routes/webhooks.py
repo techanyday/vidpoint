@@ -12,26 +12,57 @@ notification_service = NotificationService()
 logger = logging.getLogger(__name__)
 
 # Configure logging
-logger.setLevel(logging.DEBUG)
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 
 def verify_square_signature(request_data, signature, signing_key):
     """Verify Square webhook signature."""
     try:
-        # For test notifications, skip signature verification
-        if request_data and isinstance(request_data, bytes):
-            data = json.loads(request_data.decode('utf-8'))
-            if data.get('type') == 'test_notification':
-                logger.info("Received test notification, skipping signature verification")
-                return True
+        logger.debug("=== Signature Verification Debug ===")
+        logger.debug(f"Request Data Type: {type(request_data)}")
+        logger.debug(f"Request Data Length: {len(request_data) if request_data else 0}")
+        logger.debug(f"Signature: {signature}")
+        logger.debug(f"Signing Key: {signing_key}")
+        
+        if not request_data:
+            logger.error("No request data to verify")
+            return False
+            
+        if not signature:
+            logger.error("No signature provided")
+            return False
+            
+        if not signing_key:
+            logger.error("No signing key configured")
+            return False
 
+        # For test notifications, skip signature verification
+        try:
+            if isinstance(request_data, bytes):
+                data = json.loads(request_data.decode('utf-8'))
+                if data.get('type') == 'test_notification':
+                    logger.info("Test notification detected, skipping signature verification")
+                    return True
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse request data as JSON: {str(e)}")
+            return False
+
+        # Compute signature
         computed_signature = hmac.new(
             signing_key.encode('utf-8'),
             request_data,
             hashlib.sha256
         ).hexdigest()
-        logger.debug(f"Computed signature: {computed_signature}")
-        logger.debug(f"Received signature: {signature}")
-        return hmac.compare_digest(computed_signature, signature)
+        
+        logger.debug(f"Computed Signature: {computed_signature}")
+        
+        # Compare signatures
+        signatures_match = hmac.compare_digest(computed_signature, signature)
+        logger.debug(f"Signatures Match: {signatures_match}")
+        
+        return signatures_match
     except Exception as e:
         logger.error(f"Error verifying signature: {str(e)}", exc_info=True)
         return False
@@ -39,7 +70,7 @@ def verify_square_signature(request_data, signature, signing_key):
 @bp.route('/square', methods=['POST', 'OPTIONS'])
 def square_webhook():
     """Handle Square payment notifications."""
-    logger.debug("=== Square Webhook Request ===")
+    logger.debug("\n=== Square Webhook Request ===")
     logger.debug(f"Request Method: {request.method}")
     logger.debug(f"Request Path: {request.path}")
     logger.debug(f"Request URL: {request.url}")
@@ -57,13 +88,9 @@ def square_webhook():
         response.headers.add('Access-Control-Allow-Methods', 'POST,OPTIONS')
         return response
     
-    # Verify webhook signature
-    signature = request.headers.get('x-square-hmacsha256-signature')
+    # Get webhook signing key from config
     signing_key = current_app.config.get('SQUARE_WEBHOOK_SIGNING_KEY')
-    
-    logger.debug(f"Signature Header Present: {bool(signature)}")
-    logger.debug(f"Signing Key Present: {bool(signing_key)}")
-    logger.debug(f"Signing Key Value: {signing_key}")
+    logger.debug(f"Webhook Signing Key from Config: {signing_key}")
     
     if not signing_key:
         logger.error("Missing webhook signing key in configuration")
@@ -71,12 +98,17 @@ def square_webhook():
         response.headers.add('Access-Control-Allow-Origin', '*')
         return response
     
+    # Get signature from headers
+    signature = request.headers.get('x-square-hmacsha256-signature')
+    logger.debug(f"Signature from Headers: {signature}")
+    
     if not signature:
         logger.error("Missing signature header")
         response = make_response({'error': 'Missing signature header'}, 401)
         response.headers.add('Access-Control-Allow-Origin', '*')
         return response
     
+    # Verify signature
     if not verify_square_signature(raw_data, signature, signing_key):
         logger.error("Invalid signature")
         response = make_response({'error': 'Invalid signature'}, 401)
@@ -84,6 +116,7 @@ def square_webhook():
         return response
     
     try:
+        # Parse request data
         event = json.loads(raw_data.decode('utf-8')) if raw_data else None
         if not event:
             logger.error("No event data received")
@@ -95,9 +128,13 @@ def square_webhook():
         logger.debug(f"Event Type: {event_type}")
         logger.debug(f"Event Data: {json.dumps(event, indent=2)}")
         
+        # Handle test notifications
         if event_type == 'test_notification':
-            logger.info("Received test notification")
-            response = make_response({'success': True, 'message': 'Test notification received'}, 200)
+            logger.info("Successfully processed test notification")
+            response = make_response({
+                'success': True,
+                'message': 'Test notification received and verified'
+            }, 200)
             response.headers.add('Access-Control-Allow-Origin', '*')
             return response
         
