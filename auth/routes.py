@@ -6,11 +6,14 @@ from google.auth.exceptions import RefreshError
 from functools import wraps
 import os
 import json
-from . import auth
 from models.user import User
 from models.database import get_db
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime, timedelta
+import logging
+from . import auth_blueprint
+
+logger = logging.getLogger(__name__)
 
 # OAuth 2.0 scopes
 SCOPES = [
@@ -23,73 +26,105 @@ def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if 'user_id' not in session:
-            return redirect(url_for('auth.login'))
+            return redirect(url_for('auth_blueprint.login'))
         return f(*args, **kwargs)
     return decorated_function
 
-@auth.route('/register', methods=['GET', 'POST'])
+@auth_blueprint.before_request
+def before_request():
+    """Set up session configuration."""
+    try:
+        session.permanent = True  # Make session permanent
+        current_app.permanent_session_lifetime = timedelta(days=7)  # Set session lifetime to 7 days
+    except Exception as e:
+        logger.error(f"Error in before_request: {str(e)}")
+
+@auth_blueprint.after_request
+def after_request(response):
+    """Configure response headers for security."""
+    try:
+        response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+        response.headers['X-Frame-Options'] = 'SAMEORIGIN'
+        return response
+    except Exception as e:
+        logger.error(f"Error in after_request: {str(e)}")
+        return response
+
+@auth_blueprint.route('/register', methods=['GET', 'POST'])
 def register():
     """Register a new user."""
-    if request.method == 'GET':
-        return render_template('auth/register.html')
-        
-    if request.method == 'POST':
-        db = get_db()
-        
-        # Get form data
-        email = request.form.get('email')
-        password = request.form.get('password')
-        confirm_password = request.form.get('confirm_password')
-        name = request.form.get('name')
-        
-        # Validate form data
-        if not email or not password or not confirm_password or not name:
-            flash('All fields are required.', 'error')
+    try:
+        if request.method == 'GET':
             return render_template('auth/register.html')
             
-        if password != confirm_password:
-            flash('Passwords do not match.', 'error')
-            return render_template('auth/register.html')
+        if request.method == 'POST':
+            db = get_db()
             
-        # Check if user already exists
-        existing_user = db.get_user_by_email(email)
-        if existing_user:
-            flash('Email already registered. Please login.', 'error')
-            return redirect(url_for('auth.login'))
+            # Get form data
+            email = request.form.get('email')
+            password = request.form.get('password')
+            confirm_password = request.form.get('confirm_password')
+            name = request.form.get('name')
             
-        # Create new user
-        user_data = {
-            'email': email,
-            'password_hash': generate_password_hash(password),
-            'name': name,
-            'created_at': datetime.now(),
-            'subscription': {
-                'plan': 'free',
-                'credits': 3,
-                'start_date': datetime.now(),
-                'end_date': datetime.now() + timedelta(days=30)
-            },
-            'notification_preferences': {
-                'subscription_expiry': True,
-                'low_credits': True,
-                'payment_confirmation': True,
-                'export_complete': True,
-                'promotional': False,
-                'email_digest': 'daily'
+            # Validate form data
+            if not email or not password or not confirm_password or not name:
+                flash('All fields are required.', 'error')
+                return render_template('auth/register.html')
+                
+            if password != confirm_password:
+                flash('Passwords do not match.', 'error')
+                return render_template('auth/register.html')
+                
+            # Check if user already exists
+            existing_user = User.get_by_email(email)
+            if existing_user:
+                flash('Email already registered. Please login.', 'error')
+                return redirect(url_for('auth_blueprint.login'))
+                
+            # Create new user
+            user = User(
+                email=email,
+                name=name,
+                created_at=datetime.now(),
+                subscription_plan='free',
+                subscription_end=datetime.now() + timedelta(days=30),
+                summaries_remaining=3
+            )
+            user.set_password(password)
+            
+            # Insert user into database
+            user_data = {
+                'email': user.email,
+                'name': user.name,
+                'password_hash': user.password_hash,
+                'created_at': user.created_at,
+                'subscription_plan': user.subscription_plan,
+                'subscription_end': user.subscription_end,
+                'summaries_remaining': user.summaries_remaining
             }
-        }
-        
-        user_id = db.create_user(user_data)
-        if not user_id:
-            flash('Failed to create account. Please try again.', 'error')
-            return render_template('auth/register.html')
             
-        # Log user in
-        session['user_id'] = str(user_id)
-        flash('Account created successfully!', 'success')
-        return redirect(url_for('dashboard.index'))
+            try:
+                user_id = db.insert_one('users', user_data)
+                if not user_id:
+                    raise Exception("Failed to create user in database")
+                    
+                # Log user in
+                session['user_id'] = str(user_id)
+                flash('Account created successfully!', 'success')
+                return redirect(url_for('dashboard.index'))
+                
+            except Exception as e:
+                logger.error(f"Database error during registration: {str(e)}")
+                flash('An error occurred during registration. Please try again.', 'error')
+                return render_template('auth/register.html')
+                
+    except Exception as e:
+        logger.error(f"Registration error: {str(e)}")
+        flash('An error occurred during registration. Please try again.', 'error')
+        return render_template('auth/register.html')
 
-@auth.route('/login', methods=['GET', 'POST'])
+@auth_blueprint.route('/login', methods=['GET', 'POST'])
 def login():
     """Handle user login."""
     if request.method == 'GET':
@@ -123,7 +158,7 @@ def login():
                 "client_secret": current_app.config['GOOGLE_CLIENT_SECRET'],
                 "auth_uri": "https://accounts.google.com/o/oauth2/auth",
                 "token_uri": "https://oauth2.googleapis.com/token",
-                "redirect_uris": [url_for('auth.oauth2callback', _external=True)]
+                "redirect_uris": [url_for('auth_blueprint.oauth2callback', _external=True)]
             }
         },
         scopes=SCOPES
@@ -138,7 +173,7 @@ def login():
     session['state'] = state
     return redirect(authorization_url)
 
-@auth.route('/oauth2callback')
+@auth_blueprint.route('/oauth2callback')
 def oauth2callback():
     state = session.get('state')
     
@@ -153,7 +188,7 @@ def oauth2callback():
                 "client_secret": current_app.config['GOOGLE_CLIENT_SECRET'],
                 "auth_uri": "https://accounts.google.com/o/oauth2/auth",
                 "token_uri": "https://oauth2.googleapis.com/token",
-                "redirect_uris": [url_for('auth.oauth2callback', _external=True)]
+                "redirect_uris": [url_for('auth_blueprint.oauth2callback', _external=True)]
             }
         },
         scopes=SCOPES,
@@ -224,9 +259,9 @@ def oauth2callback():
         return redirect(url_for('dashboard.index'))
     else:
         flash('Google login failed. Please try again.', 'error')
-        return redirect(url_for('auth.login'))
+        return redirect(url_for('auth_blueprint.login'))
 
-@auth.route('/logout')
+@auth_blueprint.route('/logout')
 def logout():
     """Log out the current user."""
     session.clear()

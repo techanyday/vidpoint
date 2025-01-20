@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
 import whisper
 from pydub import AudioSegment
@@ -16,9 +16,16 @@ from bson import json_util
 import threading
 import re
 import datetime
+from auth.routes import auth_blueprint  # Import directly from routes
+from models.database import init_db, get_db
+from datetime import timedelta
+from jinja2 import FileSystemLoader
 
 # Set up logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -42,8 +49,94 @@ try:
 except Exception as e:
     logger.error(f"MongoDB connection error: {str(e)}")
 
-app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "*"}})
+# Initialize Flask app with explicit template path
+template_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), 'templates'))
+app = Flask(__name__, 
+    template_folder=template_dir,
+    static_folder='static'
+)
+
+# Register blueprints
+app.register_blueprint(auth_blueprint)
+
+# Enable debug mode for development
+app.debug = True
+
+# Configure logging
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+# Log template directory and blueprint registration
+logger.info(f"Template directory: {template_dir}")
+logger.info(f"Template folder exists: {os.path.exists(template_dir)}")
+logger.info(f"Base template exists: {os.path.exists(os.path.join(template_dir, 'base.html'))}")
+logger.info("Registered auth blueprint with URL prefix: /auth")
+
+# Generate a secure secret key if not provided
+if not os.environ.get('SECRET_KEY'):
+    import secrets
+    generated_key = secrets.token_hex(32)
+    logger.warning("SECRET_KEY not set in environment. Using generated key. "
+                  "For production, please set a permanent SECRET_KEY in your environment variables.")
+    app.config['SECRET_KEY'] = generated_key
+else:
+    app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY')
+
+# Configure MongoDB
+mongodb_uri = os.environ.get('MONGODB_URI')
+if not mongodb_uri:
+    logger.error("MONGODB_URI environment variable not set")
+    raise ValueError("MONGODB_URI environment variable is required")
+
+# Validate MongoDB URI format
+if not mongodb_uri.startswith('mongodb+srv://'):
+    logger.error("Invalid MongoDB URI format. Must be a MongoDB Atlas URI starting with 'mongodb+srv://'")
+    raise ValueError("Invalid MongoDB URI format")
+
+app.config['MONGODB_URI'] = mongodb_uri
+logger.info("MongoDB Atlas configuration loaded")
+
+app.config['GOOGLE_CLIENT_ID'] = os.environ.get('GOOGLE_CLIENT_ID')
+app.config['GOOGLE_CLIENT_SECRET'] = os.environ.get('GOOGLE_CLIENT_SECRET')
+
+# Configure session
+app.config['SESSION_TYPE'] = 'filesystem'
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7)
+app.config['SESSION_COOKIE_SECURE'] = True
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+
+# Configure CORS for Render deployment
+CORS(app, resources={
+    r"/*": {
+        "origins": [
+            "http://localhost:5000",
+            "https://vidpoint.onrender.com"
+        ],
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization"],
+        "supports_credentials": True
+    }
+})
+
+# Initialize database
+try:
+    logger.info("Initializing database connection to MongoDB Atlas...")
+    init_db(app)
+    logger.info("Database initialized successfully")
+except Exception as e:
+    logger.error(f"Error initializing database: {str(e)}")
+    raise
+
+# Configure Jinja2 to look for templates in the root templates directory
+app.jinja_loader = FileSystemLoader([
+    os.path.join(app.root_path, 'templates'),
+    os.path.join(app.root_path, 'templates/auth')
+])
+logger.info(f"Template directories: {app.jinja_loader.searchpath}")
 
 def mongo_to_json(obj):
     """Convert MongoDB object to JSON serializable format."""
@@ -196,172 +289,52 @@ def get_status(video_id):
         logger.error(f"Error getting status: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
-@app.route("/", methods=["GET", "POST"])
-def process_video():
-    if request.method == "GET":
-        return """
-        <html>
-            <head>
-                <title>VidPoint</title>
-                <style>
-                    body { font-family: Arial, sans-serif; margin: 40px; background-color: #f5f5f5; }
-                    .container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-                    input[type="text"] { width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #ddd; border-radius: 4px; }
-                    button { padding: 10px 20px; background: #007bff; color: white; border: none; cursor: pointer; border-radius: 4px; }
-                    button:hover { background: #0056b3; }
-                    #result { margin-top: 20px; white-space: pre-wrap; }
-                    .loading { display: none; margin: 20px 0; text-align: center; }
-                    .progress { display: none; margin: 20px 0; }
-                    .progress-bar { width: 100%; height: 20px; background-color: #f0f0f0; border-radius: 10px; overflow: hidden; }
-                    .progress-bar-fill { width: 0%; height: 100%; background-color: #007bff; transition: width 0.5s ease-in-out; }
-                    .status-text { text-align: center; margin-top: 10px; }
-                    h1 { color: #333; text-align: center; }
-                    .error { color: #dc3545; margin-top: 10px; }
-                </style>
-            </head>
-            <body>
-                <div class="container">
-                    <h1>VidPoint</h1>
-                    <p>Enter a YouTube URL to process:</p>
-                    <input type="text" id="url" placeholder="Enter YouTube URL (e.g., https://www.youtube.com/watch?v=...)">
-                    <button onclick="processVideo()">Process Video</button>
-                    <div class="loading" id="loading">Processing video...</div>
-                    <div class="progress" id="progress">
-                        <div class="progress-bar">
-                            <div class="progress-bar-fill" id="progress-bar-fill"></div>
-                        </div>
-                        <div class="status-text" id="status-text">Initializing...</div>
-                    </div>
-                    <div id="result"></div>
-                </div>
-                <script>
-                    let statusCheckInterval;
-                    
-                    function validateYouTubeUrl(url) {
-                        const patterns = [
-                            /^https?:\/\/(?:www\.)?youtube\.com\/watch\?v=[\w-]+/,
-                            /^https?:\/\/(?:www\.)?youtube\.com\/v\/[\w-]+/,
-                            /^https?:\/\/youtu\.be\/[\w-]+/
-                        ];
-                        return patterns.some(pattern => pattern.test(url));
-                    }
-                    
-                    function checkStatus(videoId) {
-                        fetch(`/status/${videoId}`)
-                        .then(response => response.json())
-                        .then(data => {
-                            const progress = document.getElementById('progress');
-                            const progressBarFill = document.getElementById('progress-bar-fill');
-                            const statusText = document.getElementById('status-text');
-                            const result = document.getElementById('result');
-                            
-                            if (data.error) {
-                                clearInterval(statusCheckInterval);
-                                progress.style.display = 'block';
-                                statusText.textContent = `Error: ${data.error}`;
-                                statusText.className = 'status-text error';
-                            } else if (data.status === 'completed') {
-                                clearInterval(statusCheckInterval);
-                                progress.style.display = 'block';
-                                progressBarFill.style.width = '100%';
-                                statusText.textContent = 'Processing complete!';
-                                if (data.presentation_url) {
-                                    result.innerHTML = `<p>View your presentation: <a href="${data.presentation_url}" target="_blank">${data.presentation_url}</a></p>`;
-                                }
-                            } else if (data.status === 'error') {
-                                clearInterval(statusCheckInterval);
-                                progress.style.display = 'block';
-                                statusText.textContent = data.error || 'An error occurred';
-                                statusText.className = 'status-text error';
-                            } else if (data.status === 'processing') {
-                                progress.style.display = 'block';
-                                let step = data.step || 'processing';
-                                let stepProgress = {
-                                    'starting': 10,
-                                    'downloading': 30,
-                                    'transcribing': 50,
-                                    'extracting': 70,
-                                    'creating_slides': 90
-                                };
-                                progressBarFill.style.width = `${stepProgress[step] || 0}%`;
-                                statusText.textContent = `Status: ${step.replace('_', ' ')}...`;
-                            }
-                        })
-                        .catch(error => {
-                            console.error('Error:', error);
-                            const statusText = document.getElementById('status-text');
-                            statusText.textContent = 'Error checking status';
-                            statusText.className = 'status-text error';
-                        });
-                    }
-                    
-                    function processVideo() {
-                        const url = document.getElementById('url').value.trim();
-                        const loading = document.getElementById('loading');
-                        const progress = document.getElementById('progress');
-                        const statusText = document.getElementById('status-text');
-                        const result = document.getElementById('result');
-                        
-                        // Reset UI
-                        result.innerHTML = '';
-                        clearInterval(statusCheckInterval);
-                        
-                        if (!url) {
-                            statusText.textContent = 'Please enter a YouTube URL';
-                            statusText.className = 'status-text error';
-                            return;
-                        }
-                        
-                        if (!validateYouTubeUrl(url)) {
-                            statusText.textContent = 'Please enter a valid YouTube URL';
-                            statusText.className = 'status-text error';
-                            return;
-                        }
-                        
-                        loading.style.display = 'block';
-                        progress.style.display = 'block';
-                        statusText.textContent = 'Starting...';
-                        statusText.className = 'status-text';
+@app.route('/')
+def index():
+    """Render the main page."""
+    # Get pricing plans from database or config
+    pricing_plans = {
+        'free': {
+            'name': 'Free',
+            'description': 'Perfect for getting started',
+            'price': 0,
+            'features': [
+                '3 summaries per month',
+                'Up to 200 tokens',
+                'Word document export',
+                'Basic support'
+            ]
+        },
+        'starter': {
+            'name': 'Starter',
+            'description': 'Great for regular users',
+            'price': 4.99,
+            'features': [
+                '50 summaries per month',
+                'Up to 500 tokens',
+                'Word document export',
+                'Priority support',
+                'Purchase additional credits'
+            ]
+        },
+        'pro': {
+            'name': 'Pro',
+            'description': 'Best for power users',
+            'price': 9.99,
+            'features': [
+                '1,000 summaries per month',
+                'Up to 2,000 tokens',
+                'Bulk processing',
+                'Team accounts',
+                'Premium support',
+                'Purchase additional credits'
+            ]
+        }
+    }
+    return render_template('index.html', pricing_plans=pricing_plans)
 
-                        fetch('/', {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                            },
-                            body: JSON.stringify({url: url}),
-                        })
-                        .then(response => {
-                            if (!response.ok) {
-                                return response.json().then(data => {
-                                    throw new Error(data.error || `HTTP error! status: ${response.status}`);
-                                });
-                            }
-                            return response.json();
-                        })
-                        .then(data => {
-                            loading.style.display = 'none';
-                            if (data.error) {
-                                statusText.textContent = `Error: ${data.error}`;
-                                statusText.className = 'status-text error';
-                            } else if (data.video_id) {
-                                statusText.className = 'status-text';
-                                statusCheckInterval = setInterval(() => checkStatus(data.video_id), 2000);
-                            } else {
-                                throw new Error('Invalid response from server');
-                            }
-                        })
-                        .catch((error) => {
-                            loading.style.display = 'none';
-                            console.error('Error:', error);
-                            statusText.textContent = error.message || 'Error processing video';
-                            statusText.className = 'status-text error';
-                        });
-                    }
-                </script>
-            </body>
-        </html>
-        """
-    
+@app.route("/", methods=["POST"])
+def process_video():
     if request.method == "POST":
         try:
             # Get and validate request data

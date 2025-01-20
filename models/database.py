@@ -16,19 +16,13 @@ class Database:
     @classmethod
     def _get_connection_uri(cls, uri: str) -> str:
         """Process MongoDB URI to ensure proper format."""
+        if not uri:
+            raise ValueError("MongoDB URI cannot be empty")
+            
         if uri.startswith('mongodb+srv://'):
-            # Convert srv URI to standard format
-            parsed = urlparse(uri)
-            auth = parsed.netloc.split('@')[0]
-            cluster = parsed.netloc.split('@')[1]
-            db_name = parsed.path.lstrip('/')
+            print("Using MongoDB Atlas connection")
+            return uri  # Return the srv URI as is for Atlas connections
             
-            # Construct direct connection string with explicit port
-            hosts = [
-                f"{cluster.replace('mongodb.net', 'mongodb.net:27017')}",
-            ]
-            
-            return f"mongodb://{auth}@{','.join(hosts)}/{db_name}?retryWrites=true&w=majority"
         return uri
 
     @classmethod
@@ -40,18 +34,35 @@ class Database:
             try:
                 print(f"MongoDB connection attempt {attempt + 1}/{cls.MAX_RETRY_ATTEMPTS}")
                 
-                # Use minimal connection settings
+                # Parse the URI to extract database name
+                parsed_uri = urlparse(uri)
+                db_name = parsed_uri.path.lstrip('/').split('?')[0]
+                print(f"Connecting to database: {db_name}")
+                
+                # Use Atlas-optimized settings
                 client = MongoClient(
                     uri,
-                    connectTimeoutMS=20000,
-                    serverSelectionTimeoutMS=20000,
-                    socketTimeoutMS=20000,
-                    retryWrites=True
+                    connectTimeoutMS=30000,
+                    serverSelectionTimeoutMS=30000,
+                    socketTimeoutMS=30000,
+                    retryWrites=True,
+                    retryReads=True,
+                    w='majority',
+                    maxPoolSize=50,
+                    minPoolSize=10,
+                    maxIdleTimeMS=60000,
+                    appName='VidPoint'
                 )
                 
                 # Test connection with a light command
                 client.admin.command('ping')
-                print("Successfully connected to MongoDB")
+                print(f"Successfully connected to MongoDB Atlas - Database: {db_name}")
+                
+                # Verify we can access the specific database
+                db = client[db_name]
+                db.list_collection_names()
+                print("Database access verified")
+                
                 return client
                 
             except (ConnectionFailure, ServerSelectionTimeoutError) as e:
@@ -59,11 +70,16 @@ class Database:
                 error_msg = str(e).lower()
                 
                 if "unauthorized" in error_msg:
-                    raise ConnectionFailure("Authentication failed. Please check your MongoDB username and password.")
+                    print("\nAuthentication Error:")
+                    print("1. Check if username 'lawrencekarthur' is correct")
+                    print("2. Verify the password in the connection string")
+                    print("3. Ensure the user has readWrite permissions")
+                    raise ConnectionFailure("Authentication failed. Please check your MongoDB Atlas credentials.")
                 elif "network" in error_msg or "timeout" in error_msg:
-                    print("Network error or timeout. This might be due to IP access restrictions.")
-                    print("Please ensure your IP is whitelisted in MongoDB Atlas Network Access settings.")
-                    print("For Render deployment, you may need to allow access from anywhere (0.0.0.0/0)")
+                    print("\nNetwork Error:")
+                    print("1. Checking connection to cluster0.us2j7.mongodb.net")
+                    print("2. Ensure IP 0.0.0.0/0 is in Atlas Network Access")
+                    print("3. Verify Render's outbound connections")
                 
                 print(f"Connection attempt {attempt + 1} failed: {str(e)}")
                 if attempt < cls.MAX_RETRY_ATTEMPTS - 1:
@@ -71,10 +87,13 @@ class Database:
                     time.sleep(cls.RETRY_DELAY_SECONDS)
             except OperationFailure as e:
                 if e.code == 8000:
-                    raise ConnectionFailure("Wrong database or user. Please check your MongoDB credentials.")
+                    print("\nDatabase Access Error:")
+                    print("1. Verify access to 'vidpoint' database")
+                    print("2. Check user permissions in MongoDB Atlas")
+                    raise ConnectionFailure("Database access denied. Please check permissions.")
                 raise
                     
-        raise ConnectionFailure(f"Failed to connect after {cls.MAX_RETRY_ATTEMPTS} attempts. Last error: {str(last_error)}")
+        raise ConnectionFailure(f"Failed to connect to MongoDB Atlas after {cls.MAX_RETRY_ATTEMPTS} attempts. Last error: {str(last_error)}")
 
     def __new__(cls):
         if cls._instance is None:
@@ -87,10 +106,18 @@ class Database:
                 print("Warning: Using localhost MongoDB. Set MONGODB_URI for production.")
             
             try:
+                # Process the connection URI
+                processed_uri = cls._get_connection_uri(mongodb_uri)
+                print("Connecting to MongoDB...")
+                
                 # Connect with retry mechanism
-                client = cls._connect_with_retry(mongodb_uri)
+                client = cls._connect_with_retry(processed_uri)
                 cls._instance.client = client
-                cls._instance.db = client.get_database()
+                
+                # Get database name from URI or use default
+                parsed_uri = urlparse(mongodb_uri)
+                db_name = parsed_uri.path.lstrip('/') or 'vidpoint'
+                cls._instance.db = client[db_name]
                 print(f"Using database: {cls._instance.db.name}")
                 
                 # Initialize database and collections
@@ -99,9 +126,9 @@ class Database:
                 print(f"Error initializing database: {str(e)}")
                 print("\nTroubleshooting steps:")
                 print("1. Check if your IP is whitelisted in MongoDB Atlas")
-                print("2. Verify your MongoDB URI is correct")
-                print("3. Ensure your username and password are correct")
-                print("4. For deployment, allow access from anywhere (0.0.0.0/0) in Atlas")
+                print("2. Verify your MongoDB URI format")
+                print("3. Ensure all environment variables are set")
+                print("4. Check MongoDB Atlas network access settings")
                 raise
                 
         return cls._instance
@@ -109,13 +136,17 @@ class Database:
     def _init_database(self):
         """Initialize database collections and indexes."""
         try:
-            # Create indexes for various collections
-            self.db.videos.create_index([("video_id", ASCENDING)], unique=True)
-            self.db.transcripts.create_index([("video_id", ASCENDING)], unique=True)
-            self.db.summaries.create_index([("video_id", ASCENDING)], unique=True)
-            print("Database indexes created successfully")
+            # Create collections if they don't exist
+            if 'users' not in self.db.list_collection_names():
+                self.db.create_collection('users')
+            
+            # Create indexes
+            self.db.users.create_index([('email', ASCENDING)], unique=True)
+            self.db.users.create_index([('google_id', ASCENDING)], sparse=True)
+            
+            print("Database collections and indexes initialized")
         except Exception as e:
-            print(f"Error creating database indexes: {str(e)}")
+            print(f"Error initializing collections and indexes: {str(e)}")
             raise
 
     def insert_one(self, collection, document):
@@ -386,6 +417,12 @@ class Database:
         except Exception as e:
             print(f"Error getting notification preferences: {str(e)}")
             raise
+
+def init_db(app):
+    """Initialize the database with the Flask app."""
+    db = get_db()
+    app.config['db'] = db
+    return db
 
 def get_db():
     """Get the database instance."""

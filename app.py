@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, send_file, render_template, session
+from flask import Flask, request, jsonify, send_file, render_template, session, redirect, url_for
 from process_flow import VideoProcessor
 from document_exporter import export_to_word, export_to_pdf
 from models.database import Database
@@ -38,12 +38,27 @@ app.register_blueprint(webhooks.bp)
 
 @app.context_processor
 def inject_user():
+    """Inject user data into templates."""
+    if 'user_id' in session:
+        db = Database()
+        user = db.get_user_by_id(session['user_id'])
+        if user:
+            return {
+                'current_user': {
+                    'is_authenticated': True,
+                    'name': user.get('name'),
+                    'email': user.get('email'),
+                    'picture': user.get('picture', 'https://www.gravatar.com/avatar/00000000000000000000000000000000?d=mp&f=y'),
+                    'subscription': user.get('subscription', {})
+                }
+            }
     return {
         'current_user': {
-            'is_authenticated': 'user_id' in session,
-            'name': session.get('user_name'),
-            'email': session.get('user_email'),
-            'picture': session.get('picture')
+            'is_authenticated': False,
+            'name': None,
+            'email': None,
+            'picture': None,
+            'subscription': None
         }
     }
 
@@ -54,124 +69,58 @@ processor = VideoProcessor(os.getenv("OPENAI_API_KEY"))
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        if "user_email" not in session:
-            return jsonify({"error": "Please log in"}), 401
+        if "user_id" not in session:
+            return redirect(url_for('auth.login'))
         return f(*args, **kwargs)
     return decorated_function
 
 @app.route('/')
 def index():
     """Render the main page."""
-    user = None
-    if 'user_email' in session:
-        user = User.get_by_email(session.get('user_email'))
-    return render_template('index.html', 
-                         user=user,
+    return render_template('index.html',
                          pricing_plans=PRICING_PLANS,
                          credit_packages=CREDIT_PACKAGES)
 
-@app.route('/register', methods=['POST'])
-def register():
-    """Register a new user."""
-    try:
-        data = request.get_json()
-        email = data.get('email')
-        password = data.get('password')
-        name = data.get('name')
-        
-        if not email or not password:
-            return jsonify({"error": "Email and password required"}), 400
-            
-        # Check if user already exists
-        existing_user = User.get_by_email(email)
-        if existing_user:
-            return jsonify({"error": "Email already registered"}), 400
-            
-        # Create new user
-        user = User.create(email=email, name=name)
-        user.set_password(password)
-        user.save()
-            
-        session["user_email"] = email
-        return jsonify({
-            "message": "Registration successful",
-            "user": {
-                "email": user.email,
-                "name": user.name,
-                "subscription_plan": user.subscription_plan
-            }
-        })
-        
-    except Exception as e:
-        logger.error(f"Registration error: {str(e)}")
-        return jsonify({"error": str(e)}), 500
-
-@app.route('/login', methods=['POST'])
-def login():
-    """Log in a user."""
-    try:
-        data = request.get_json()
-        email = data.get('email')
-        password = data.get('password')
-        
-        if not email or not password:
-            return jsonify({"error": "Email and password required"}), 400
-            
-        user = User.get_by_email(email)
-        if not user or not user.check_password(password):
-            return jsonify({"error": "Invalid email or password"}), 401
-            
-        session["user_email"] = email
-        return jsonify({
-            "message": "Login successful",
-            "user": {
-                "email": user.email,
-                "name": user.name,
-                "subscription_plan": user.subscription_plan
-            }
-        })
-        
-    except Exception as e:
-        logger.error(f"Login error: {str(e)}")
-        return jsonify({"error": str(e)}), 500
-
-@app.route('/logout')
-def logout():
-    """Log out the current user."""
-    session.pop("user_email", None)
-    return jsonify({"message": "Logged out"})
-
-@app.route('/process', methods=['POST'])
+@app.route('/process-video', methods=['POST'])
 @login_required
 def process_video():
     """Process a video URL."""
     try:
         data = request.get_json()
-        video_url = data.get('videoUrl')
-        is_premium = data.get('is_premium', False)
+        video_url = data.get('video_url')
+        format_type = data.get('format_type', 'slides')  # Default to slides
         
         if not video_url:
-            return jsonify({"error": "No video URL provided"}), 400
+            return jsonify({"error": "Video URL required"}), 400
             
-        # Check user limits
-        user = db.get_user(session["user_email"])
-        can_process, error_message = user.can_process_video()
-        if not can_process:
-            return jsonify({"error": error_message}), 403
+        # Get user from session
+        user = db.get_user_by_id(session['user_id'])
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+            
+        # Check if user has enough credits
+        if user.get('subscription', {}).get('credits', 0) < 1:
+            return jsonify({"error": "Insufficient credits"}), 403
             
         # Process video
-        result = processor.process_video(video_url, is_premium)
-        if "error" in result:
-            return jsonify({"error": result["error"]}), 500
-            
-        # Record usage
-        user.process_video()
-        db.update_user(user)
+        result = processor.process_video(video_url, format_type)
+        
+        # Deduct credit
+        db.update_user_credits(user['_id'], -1)
+        
+        # Save processing history
+        db.save_processing_history(
+            user_id=user['_id'],
+            video_url=video_url,
+            format_type=format_type,
+            result=result,
+            processed_at=datetime.now()
+        )
         
         return jsonify(result)
         
     except Exception as e:
-        logger.error(f"Error processing video: {str(e)}")
+        logger.error(f"Error processing video: {str(e)}", exc_info=True)
         return jsonify({"error": str(e)}), 500
 
 @app.route('/export', methods=['POST'])
@@ -181,68 +130,22 @@ def export_content():
     try:
         data = request.get_json()
         content = data.get('content')
-        content_type = data.get('type')
-        format = data.get('format', 'word')
-        title = data.get('title')
+        format_type = data.get('format_type', 'docx')
         
-        if not content or not content_type:
-            return jsonify({"error": "Missing content or type"}), 400
+        if not content:
+            return jsonify({"error": "Content required"}), 400
             
-        if format == 'word':
-            filepath = export_to_word(content, content_type, title)
+        if format_type == 'docx':
+            file_path = export_to_word(content)
+        elif format_type == 'pdf':
+            file_path = export_to_pdf(content)
         else:
-            filepath = export_to_pdf(content, content_type, title)
+            return jsonify({"error": "Invalid format type"}), 400
             
-        if filepath:
-            return send_file(filepath, as_attachment=True)
-        else:
-            return jsonify({"error": "Failed to export content"}), 500
-            
-    except Exception as e:
-        logger.error(f"Error in export_content: {str(e)}")
-        return jsonify({"error": str(e)}), 500
-
-@app.route('/upgrade', methods=['POST'])
-@login_required
-def upgrade_plan():
-    """Upgrade a user's plan."""
-    try:
-        data = request.get_json()
-        new_plan = data.get('plan')
-        
-        if new_plan not in PRICING_PLANS:
-            return jsonify({"error": "Invalid plan"}), 400
-            
-        user = db.get_user(session["user_email"])
-        user.plan = new_plan
-        db.update_user(user)
-        
-        return jsonify({"message": "Plan upgraded successfully"})
+        return send_file(file_path, as_attachment=True)
         
     except Exception as e:
-        logger.error(f"Error upgrading plan: {str(e)}")
-        return jsonify({"error": str(e)}), 500
-
-@app.route('/buy_credits', methods=['POST'])
-@login_required
-def buy_credits():
-    """Purchase additional credits."""
-    try:
-        data = request.get_json()
-        package = data.get('package')
-        
-        if package not in CREDIT_PACKAGES:
-            return jsonify({"error": "Invalid credit package"}), 400
-            
-        user = db.get_user(session["user_email"])
-        credits = CREDIT_PACKAGES[package]["summaries"]
-        user.add_credits(credits)
-        db.update_user(user)
-        
-        return jsonify({"message": f"Added {credits} credits"})
-        
-    except Exception as e:
-        logger.error(f"Error buying credits: {str(e)}")
+        logger.error(f"Error exporting content: {str(e)}", exc_info=True)
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
