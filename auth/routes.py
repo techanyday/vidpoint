@@ -133,7 +133,7 @@ def login():
         
         # Log OAuth configuration
         logger.debug(f"Client ID: {current_app.config.get('GOOGLE_CLIENT_ID')}")
-        logger.debug(f"Has Client Secret: {'Yes' if current_app.config.get('GOOGLE_CLIENT_SECRET') else 'No'}")
+        logger.debug("Client Secret is configured: %s", bool(current_app.config.get('GOOGLE_CLIENT_SECRET')))
         
         if not current_app.config.get('GOOGLE_CLIENT_ID') or not current_app.config.get('GOOGLE_CLIENT_SECRET'):
             logger.error("Google OAuth credentials not configured")
@@ -155,13 +155,22 @@ def login():
                         ]
                     }
                 },
-                scopes=SCOPES
+                scopes=['openid', 'email', 'profile']
             )
+            
+            # Set the redirect URI based on the request
+            if request.host.startswith('localhost'):
+                redirect_uri = "http://localhost:10000/auth/google/callback"
+            else:
+                redirect_uri = "https://vidpoint.onrender.com/auth/google/callback"
+            
+            flow.redirect_uri = redirect_uri
 
             # Generate URL for request to Google's OAuth 2.0 server
             authorization_url, state = flow.authorization_url(
                 access_type='offline',
-                include_granted_scopes='true'
+                include_granted_scopes='true',
+                prompt='select_account'
             )
 
             logger.info(f"Generated authorization URL: {authorization_url}")
@@ -172,7 +181,7 @@ def login():
             logger.error(f"Error initiating Google OAuth flow: {str(e)}")
             flash('An error occurred while setting up Google login. Please try again later.', 'error')
             return render_template('auth/login.html')
-
+    
     # Handle regular email/password login
     if request.method == 'POST':
         email = request.form.get('email')
