@@ -149,7 +149,10 @@ def login():
                         "client_secret": current_app.config['GOOGLE_CLIENT_SECRET'],
                         "auth_uri": "https://accounts.google.com/o/oauth2/auth",
                         "token_uri": "https://oauth2.googleapis.com/token",
-                        "redirect_uris": [url_for('auth.oauth2callback', _external=True)]
+                        "redirect_uris": [
+                            "https://vidpoint.onrender.com/auth/google/callback",
+                            "http://localhost:10000/auth/google/callback"
+                        ]
                     }
                 },
                 scopes=SCOPES
@@ -193,92 +196,102 @@ def login():
     # Show login form for GET requests
     return render_template('auth/login.html')
 
-@auth.route('/oauth2callback')
-def oauth2callback():
+@auth.route('/google/callback')
+def google_callback():
+    """Handle Google OAuth callback."""
     state = session.get('state')
     
     if not state:
         flash('Authentication state mismatch. Please try again.', 'error')
         return redirect(url_for('index'))
 
-    flow = Flow.from_client_config(
-        {
-            "web": {
-                "client_id": current_app.config['GOOGLE_CLIENT_ID'],
-                "client_secret": current_app.config['GOOGLE_CLIENT_SECRET'],
-                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                "token_uri": "https://oauth2.googleapis.com/token",
-                "redirect_uris": [url_for('auth.oauth2callback', _external=True)]
-            }
-        },
-        scopes=SCOPES,
-        state=state
-    )
-
-    # Use the authorization server's response to fetch the OAuth 2.0 tokens
-    authorization_response = request.url
-    flow.fetch_token(authorization_response=authorization_response)
-    credentials = flow.credentials
-
-    # Get user info from Google
-    import google.oauth2.credentials
-    import google.auth.transport.requests
-    import requests
-
-    oauth2_client = google.auth.transport.requests.AuthorizedSession(
-        google.oauth2.credentials.Credentials(
-            token=credentials.token,
-            refresh_token=credentials.refresh_token,
-            token_uri=credentials.token_uri,
-            client_id=credentials.client_id,
-            client_secret=credentials.client_secret,
-            scopes=credentials.scopes
-        )
-    )
-
-    userinfo_response = oauth2_client.get(
-        'https://www.googleapis.com/oauth2/v3/userinfo'
-    ).json()
-
-    if userinfo_response.get('email_verified'):
-        unique_id = userinfo_response['sub']
-        users_email = userinfo_response['email']
-        users_name = userinfo_response.get('name', '')
-        
-        # Check if user exists
-        db = get_db()
-        user = db.get_user_by_email(users_email)
-        
-        if not user:
-            # Create new user
-            user_data = {
-                'email': users_email,
-                'name': users_name,
-                'google_id': unique_id,
-                'created_at': datetime.now(),
-                'subscription': {
-                    'plan': 'free',
-                    'credits': 3,
-                    'start_date': datetime.now(),
-                    'end_date': datetime.now() + timedelta(days=30)
-                },
-                'notification_preferences': {
-                    'subscription_expiry': True,
-                    'low_credits': True,
-                    'payment_confirmation': True,
-                    'export_complete': True,
-                    'promotional': False,
-                    'email_digest': 'daily'
+    try:
+        flow = Flow.from_client_config(
+            {
+                "web": {
+                    "client_id": current_app.config['GOOGLE_CLIENT_ID'],
+                    "client_secret": current_app.config['GOOGLE_CLIENT_SECRET'],
+                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                    "token_uri": "https://oauth2.googleapis.com/token",
+                    "redirect_uris": [
+                        "https://vidpoint.onrender.com/auth/google/callback",
+                        "http://localhost:10000/auth/google/callback"
+                    ]
                 }
-            }
-            user_id = db.create_user(user_data)
+            },
+            scopes=SCOPES,
+            state=state
+        )
+
+        # Use the authorization server's response to fetch the OAuth 2.0 tokens
+        authorization_response = request.url
+        flow.fetch_token(authorization_response=authorization_response)
+        credentials = flow.credentials
+
+        # Get user info from Google
+        import google.oauth2.credentials
+        import google.auth.transport.requests
+        import requests
+
+        oauth2_client = google.auth.transport.requests.AuthorizedSession(
+            google.oauth2.credentials.Credentials(
+                token=credentials.token,
+                refresh_token=credentials.refresh_token,
+                token_uri=credentials.token_uri,
+                client_id=credentials.client_id,
+                client_secret=credentials.client_secret,
+                scopes=credentials.scopes
+            )
+        )
+
+        userinfo_response = oauth2_client.get(
+            'https://www.googleapis.com/oauth2/v3/userinfo'
+        ).json()
+
+        if userinfo_response.get('email_verified'):
+            unique_id = userinfo_response['sub']
+            users_email = userinfo_response['email']
+            users_name = userinfo_response.get('name', '')
+            
+            # Check if user exists
+            db = get_db()
+            user = db.get_user_by_email(users_email)
+            
+            if not user:
+                # Create new user
+                user_data = {
+                    'email': users_email,
+                    'name': users_name,
+                    'google_id': unique_id,
+                    'created_at': datetime.now(),
+                    'subscription': {
+                        'plan': 'free',
+                        'credits': 3,
+                        'start_date': datetime.now(),
+                        'end_date': datetime.now() + timedelta(days=30)
+                    },
+                    'notification_preferences': {
+                        'subscription_expiry': True,
+                        'low_credits': True,
+                        'payment_confirmation': True,
+                        'export_complete': True,
+                        'promotional': False,
+                        'email_digest': 'daily'
+                    }
+                }
+                user_id = db.create_user(user_data)
+            else:
+                user_id = user['_id']
+            
+            session['user_id'] = str(user_id)
+            return redirect(url_for('dashboard.index'))
         else:
-            user_id = user['_id']
-        
-        session['user_id'] = str(user_id)
-        return redirect(url_for('dashboard.index'))
-    else:
-        flash('Google login failed. Please try again.', 'error')
+            flash('Google login failed. Please try again.', 'error')
+            return redirect(url_for('auth.login'))
+            
+    except Exception as e:
+        logger.error(f"Error in Google callback: {str(e)}")
+        flash('An error occurred during Google login. Please try again.', 'error')
         return redirect(url_for('auth.login'))
 
 @auth.route('/logout')
