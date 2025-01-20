@@ -1,40 +1,78 @@
 from flask import Flask, request, jsonify, send_file, render_template, session, redirect, url_for
 from process_flow import VideoProcessor
 from document_exporter import export_to_word, export_to_pdf
-from models.database import Database
+from models.database import Database, init_db, get_db
 from models.user import User
 from config.pricing import PRICING_PLANS, CREDIT_PACKAGES
 from config import SQUARE_CONFIG, FLASK_CONFIG, validate_config
-from auth import auth as auth_blueprint
+from auth import auth
 from routes import dashboard, payments, test_email, webhooks
 import os
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import wraps
+from jinja2 import FileSystemLoader
 
 # Set up logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
-# Validate configuration
-validate_config()
-
-app = Flask(__name__)
-app.config['SECRET_KEY'] = FLASK_CONFIG['secret_key']
-app.config['GOOGLE_CLIENT_ID'] = os.environ.get('GOOGLE_CLIENT_ID')
-app.config['GOOGLE_CLIENT_SECRET'] = os.environ.get('GOOGLE_CLIENT_SECRET')
-app.config['PAYSTACK_SECRET_KEY'] = os.environ.get('PAYSTACK_SECRET_KEY')
-app.config['PAYSTACK_PUBLIC_KEY'] = os.environ.get('PAYSTACK_PUBLIC_KEY')
-
-# Square configuration
-app.config['SQUARE_WEBHOOK_SIGNING_KEY'] = SQUARE_CONFIG['webhook_signing_key']
+# Initialize Flask app with explicit template path
+template_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), 'templates'))
+app = Flask(__name__, 
+    template_folder=template_dir,
+    static_folder='static'
+)
 
 # Register blueprints
-app.register_blueprint(auth_blueprint)
-app.register_blueprint(dashboard.bp)
-app.register_blueprint(payments.bp)
-app.register_blueprint(test_email.bp)
-app.register_blueprint(webhooks.bp)
+app.register_blueprint(auth)
+app.register_blueprint(dashboard)
+app.register_blueprint(payments)
+app.register_blueprint(test_email)
+app.register_blueprint(webhooks)
+
+# Enable debug mode for development
+app.debug = True
+
+# Log template directory and blueprint registration
+logger.info(f"Template directory: {template_dir}")
+logger.info(f"Template folder exists: {os.path.exists(template_dir)}")
+logger.info(f"Base template exists: {os.path.exists(os.path.join(template_dir, 'base.html'))}")
+
+# Generate a secure secret key if not provided
+if not os.environ.get('SECRET_KEY'):
+    import secrets
+    generated_key = secrets.token_hex(32)
+    logger.warning("SECRET_KEY not set in environment. Using generated key. "
+                  "For production, please set a permanent SECRET_KEY in your environment variables.")
+    app.config['SECRET_KEY'] = generated_key
+else:
+    app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY')
+
+# Configure MongoDB
+mongodb_uri = os.environ.get('MONGODB_URI')
+if not mongodb_uri:
+    logger.error("MONGODB_URI environment variable not set")
+    raise ValueError("MONGODB_URI environment variable is required")
+
+# Validate MongoDB URI format
+if not mongodb_uri.startswith('mongodb+srv://'):
+    logger.error("Invalid MongoDB URI format. Must be a MongoDB Atlas URI starting with 'mongodb+srv://'")
+    raise ValueError("Invalid MongoDB URI format")
+
+app.config['MONGODB_URI'] = mongodb_uri
+logger.info("MongoDB Atlas configuration loaded")
+
+# Initialize database
+try:
+    init_db(app)
+    logger.info("Database initialized successfully")
+except Exception as e:
+    logger.error(f"Error initializing database: {str(e)}")
+    raise
 
 @app.context_processor
 def inject_user():
@@ -62,10 +100,6 @@ def inject_user():
         }
     }
 
-# Initialize database and video processor
-db = Database()
-processor = VideoProcessor(os.getenv("OPENAI_API_KEY"))
-
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
@@ -77,9 +111,46 @@ def login_required(f):
 @app.route('/')
 def index():
     """Render the main page."""
-    return render_template('index.html',
-                         pricing_plans=PRICING_PLANS,
-                         credit_packages=CREDIT_PACKAGES)
+    # Get pricing plans from database or config
+    pricing_plans = {
+        'free': {
+            'name': 'Free',
+            'description': 'Perfect for getting started',
+            'price': 0,
+            'features': [
+                '3 summaries per month',
+                'Up to 200 tokens',
+                'Word document export',
+                'Basic support'
+            ]
+        },
+        'starter': {
+            'name': 'Starter',
+            'description': 'Great for regular users',
+            'price': 4.99,
+            'features': [
+                '50 summaries per month',
+                'Up to 500 tokens',
+                'Word document export',
+                'Priority support',
+                'Purchase additional credits'
+            ]
+        },
+        'pro': {
+            'name': 'Pro',
+            'description': 'Best for power users',
+            'price': 9.99,
+            'features': [
+                '1,000 summaries per month',
+                'Up to 2,000 tokens',
+                'Bulk processing',
+                'Team accounts',
+                'Premium support',
+                'Purchase additional credits'
+            ]
+        }
+    }
+    return render_template('index.html', pricing_plans=pricing_plans)
 
 @app.route('/process-video', methods=['POST'])
 @login_required
@@ -94,7 +165,7 @@ def process_video():
             return jsonify({"error": "Video URL required"}), 400
             
         # Get user from session
-        user = db.get_user_by_id(session['user_id'])
+        user = Database().get_user_by_id(session['user_id'])
         if not user:
             return jsonify({"error": "User not found"}), 404
             
@@ -103,13 +174,13 @@ def process_video():
             return jsonify({"error": "Insufficient credits"}), 403
             
         # Process video
-        result = processor.process_video(video_url, format_type)
+        result = VideoProcessor(os.getenv("OPENAI_API_KEY")).process_video(video_url, format_type)
         
         # Deduct credit
-        db.update_user_credits(user['_id'], -1)
+        Database().update_user_credits(user['_id'], -1)
         
         # Save processing history
-        db.save_processing_history(
+        Database().save_processing_history(
             user_id=user['_id'],
             video_url=video_url,
             format_type=format_type,
@@ -149,4 +220,4 @@ def export_content():
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(debug=True, port=8080)
+    app.run(debug=True, port=10000)
