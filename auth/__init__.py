@@ -3,7 +3,7 @@ import os
 
 # Create the blueprint with template folder configuration
 template_dir = os.path.abspath(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'templates'))
-auth_blueprint = Blueprint('auth_blueprint', __name__,
+auth = Blueprint('auth', __name__,
     url_prefix='/auth',
     template_folder=template_dir
 )

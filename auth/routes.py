@@ -11,7 +11,7 @@ from models.database import get_db
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime, timedelta
 import logging
-from . import auth_blueprint
+from . import auth
 
 logger = logging.getLogger(__name__)
 
@@ -26,11 +26,11 @@ def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if 'user_id' not in session:
-            return redirect(url_for('auth_blueprint.login'))
+            return redirect(url_for('auth.login'))
         return f(*args, **kwargs)
     return decorated_function
 
-@auth_blueprint.before_request
+@auth.before_request
 def before_request():
     """Set up session configuration."""
     try:
@@ -39,7 +39,7 @@ def before_request():
     except Exception as e:
         logger.error(f"Error in before_request: {str(e)}")
 
-@auth_blueprint.after_request
+@auth.after_request
 def after_request(response):
     """Configure response headers for security."""
     try:
@@ -51,7 +51,7 @@ def after_request(response):
         logger.error(f"Error in after_request: {str(e)}")
         return response
 
-@auth_blueprint.route('/register', methods=['GET', 'POST'])
+@auth.route('/register', methods=['GET', 'POST'])
 def register():
     """Register a new user."""
     try:
@@ -80,7 +80,7 @@ def register():
             existing_user = User.get_by_email(email)
             if existing_user:
                 flash('Email already registered. Please login.', 'error')
-                return redirect(url_for('auth_blueprint.login'))
+                return redirect(url_for('auth.login'))
                 
             # Create new user
             user = User(
@@ -124,7 +124,7 @@ def register():
         flash('An error occurred during registration. Please try again.', 'error')
         return render_template('auth/register.html')
 
-@auth_blueprint.route('/login', methods=['GET', 'POST'])
+@auth.route('/login', methods=['GET', 'POST'])
 def login():
     """Handle user login."""
     if request.method == 'GET':
@@ -158,7 +158,7 @@ def login():
                 "client_secret": current_app.config['GOOGLE_CLIENT_SECRET'],
                 "auth_uri": "https://accounts.google.com/o/oauth2/auth",
                 "token_uri": "https://oauth2.googleapis.com/token",
-                "redirect_uris": [url_for('auth_blueprint.oauth2callback', _external=True)]
+                "redirect_uris": [url_for('auth.oauth2callback', _external=True)]
             }
         },
         scopes=SCOPES
@@ -173,7 +173,7 @@ def login():
     session['state'] = state
     return redirect(authorization_url)
 
-@auth_blueprint.route('/oauth2callback')
+@auth.route('/oauth2callback')
 def oauth2callback():
     state = session.get('state')
     
@@ -188,7 +188,7 @@ def oauth2callback():
                 "client_secret": current_app.config['GOOGLE_CLIENT_SECRET'],
                 "auth_uri": "https://accounts.google.com/o/oauth2/auth",
                 "token_uri": "https://oauth2.googleapis.com/token",
-                "redirect_uris": [url_for('auth_blueprint.oauth2callback', _external=True)]
+                "redirect_uris": [url_for('auth.oauth2callback', _external=True)]
             }
         },
         scopes=SCOPES,
@@ -259,9 +259,9 @@ def oauth2callback():
         return redirect(url_for('dashboard.index'))
     else:
         flash('Google login failed. Please try again.', 'error')
-        return redirect(url_for('auth_blueprint.login'))
+        return redirect(url_for('auth.login'))
 
-@auth_blueprint.route('/logout')
+@auth.route('/logout')
 def logout():
     """Log out the current user."""
     session.clear()

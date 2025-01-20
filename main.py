@@ -16,7 +16,7 @@ from bson import json_util
 import threading
 import re
 import datetime
-from auth.routes import auth_blueprint  # Import directly from routes
+from auth import auth  # Import auth instead of auth_blueprint
 from models.database import init_db, get_db
 from datetime import timedelta
 from jinja2 import FileSystemLoader
@@ -57,7 +57,7 @@ app = Flask(__name__,
 )
 
 # Register blueprints
-app.register_blueprint(auth_blueprint)
+app.register_blueprint(auth)
 
 # Enable debug mode for development
 app.debug = True
