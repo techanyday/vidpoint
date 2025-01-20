@@ -15,6 +15,7 @@ import logging
 from datetime import datetime, timedelta
 from functools import wraps
 from jinja2 import FileSystemLoader
+import secrets
 
 # Set up logging
 logging.basicConfig(
@@ -28,6 +29,16 @@ template_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), 'template
 app = Flask(__name__, 
     template_folder=template_dir,
     static_folder='static'
+)
+
+# Load configuration
+app.config.update(
+    SECRET_KEY=os.environ.get('FLASK_SECRET_KEY') or secrets.token_hex(32),
+    GOOGLE_CLIENT_ID=os.environ.get('GOOGLE_CLIENT_ID'),
+    GOOGLE_CLIENT_SECRET=os.environ.get('GOOGLE_CLIENT_SECRET'),
+    SESSION_COOKIE_SECURE=True,
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE='Lax'
 )
 
 # Register blueprints
@@ -44,16 +55,6 @@ app.debug = True
 logger.info(f"Template directory: {template_dir}")
 logger.info(f"Template folder exists: {os.path.exists(template_dir)}")
 logger.info(f"Base template exists: {os.path.exists(os.path.join(template_dir, 'base.html'))}")
-
-# Generate a secure secret key if not provided
-if not os.environ.get('SECRET_KEY'):
-    import secrets
-    generated_key = secrets.token_hex(32)
-    logger.warning("SECRET_KEY not set in environment. Using generated key. "
-                  "For production, please set a permanent SECRET_KEY in your environment variables.")
-    app.config['SECRET_KEY'] = generated_key
-else:
-    app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY')
 
 # Configure MongoDB
 mongodb_uri = os.environ.get('MONGODB_URI')

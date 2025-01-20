@@ -25,6 +25,13 @@ DB_CONFIG = {
     'mongodb_uri': os.getenv('MONGODB_URI')
 }
 
+# Google OAuth configuration
+GOOGLE_CONFIG = {
+    'client_id': os.getenv('GOOGLE_CLIENT_ID'),
+    'client_secret': os.getenv('GOOGLE_CLIENT_SECRET'),
+    'project_id': os.getenv('GOOGLE_PROJECT_ID')
+}
+
 def validate_config():
     """Validate required configuration values are present."""
     missing = []
@@ -41,6 +48,12 @@ def validate_config():
     # Check DB config
     if not DB_CONFIG['mongodb_uri']:
         missing.append('MONGODB_URI')
+    
+    # Check Google OAuth config
+    if not GOOGLE_CONFIG['client_id']:
+        missing.append('GOOGLE_CLIENT_ID')
+    if not GOOGLE_CONFIG['client_secret']:
+        missing.append('GOOGLE_CLIENT_SECRET')
     
     if missing:
         raise ValueError(f"Missing required environment variables: {', '.join(missing)}")

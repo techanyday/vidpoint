@@ -129,28 +129,46 @@ def login():
     """Handle user login."""
     # Check if Google login is requested
     if request.method == 'GET' and request.args.get('provider') == 'google':
-        # Create flow instance to manage the OAuth 2.0 Authorization Grant Flow
-        flow = Flow.from_client_config(
-            {
-                "web": {
-                    "client_id": current_app.config['GOOGLE_CLIENT_ID'],
-                    "client_secret": current_app.config['GOOGLE_CLIENT_SECRET'],
-                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                    "token_uri": "https://oauth2.googleapis.com/token",
-                    "redirect_uris": [url_for('auth.oauth2callback', _external=True)]
-                }
-            },
-            scopes=SCOPES
-        )
+        logger.info("Google login requested")
+        
+        # Log OAuth configuration
+        logger.debug(f"Client ID: {current_app.config.get('GOOGLE_CLIENT_ID')}")
+        logger.debug(f"Has Client Secret: {'Yes' if current_app.config.get('GOOGLE_CLIENT_SECRET') else 'No'}")
+        
+        if not current_app.config.get('GOOGLE_CLIENT_ID') or not current_app.config.get('GOOGLE_CLIENT_SECRET'):
+            logger.error("Google OAuth credentials not configured")
+            flash('Google login is not configured properly. Please try email login instead.', 'error')
+            return render_template('auth/login.html')
+        
+        try:
+            # Create flow instance to manage the OAuth 2.0 Authorization Grant Flow
+            flow = Flow.from_client_config(
+                {
+                    "web": {
+                        "client_id": current_app.config['GOOGLE_CLIENT_ID'],
+                        "client_secret": current_app.config['GOOGLE_CLIENT_SECRET'],
+                        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                        "token_uri": "https://oauth2.googleapis.com/token",
+                        "redirect_uris": [url_for('auth.oauth2callback', _external=True)]
+                    }
+                },
+                scopes=SCOPES
+            )
 
-        # Generate URL for request to Google's OAuth 2.0 server
-        authorization_url, state = flow.authorization_url(
-            access_type='offline',
-            include_granted_scopes='true'
-        )
+            # Generate URL for request to Google's OAuth 2.0 server
+            authorization_url, state = flow.authorization_url(
+                access_type='offline',
+                include_granted_scopes='true'
+            )
 
-        session['state'] = state
-        return redirect(authorization_url)
+            logger.info(f"Generated authorization URL: {authorization_url}")
+            session['state'] = state
+            return redirect(authorization_url)
+            
+        except Exception as e:
+            logger.error(f"Error initiating Google OAuth flow: {str(e)}")
+            flash('An error occurred while setting up Google login. Please try again later.', 'error')
+            return render_template('auth/login.html')
 
     # Handle regular email/password login
     if request.method == 'POST':
