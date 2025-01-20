@@ -127,11 +127,33 @@ def register():
 @auth.route('/login', methods=['GET', 'POST'])
 def login():
     """Handle user login."""
-    if request.method == 'GET':
-        return render_template('auth/login.html')
-        
+    # Check if Google login is requested
+    if request.method == 'GET' and request.args.get('provider') == 'google':
+        # Create flow instance to manage the OAuth 2.0 Authorization Grant Flow
+        flow = Flow.from_client_config(
+            {
+                "web": {
+                    "client_id": current_app.config['GOOGLE_CLIENT_ID'],
+                    "client_secret": current_app.config['GOOGLE_CLIENT_SECRET'],
+                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                    "token_uri": "https://oauth2.googleapis.com/token",
+                    "redirect_uris": [url_for('auth.oauth2callback', _external=True)]
+                }
+            },
+            scopes=SCOPES
+        )
+
+        # Generate URL for request to Google's OAuth 2.0 server
+        authorization_url, state = flow.authorization_url(
+            access_type='offline',
+            include_granted_scopes='true'
+        )
+
+        session['state'] = state
+        return redirect(authorization_url)
+
+    # Handle regular email/password login
     if request.method == 'POST':
-        # Handle email/password login
         email = request.form.get('email')
         password = request.form.get('password')
         
@@ -149,29 +171,9 @@ def login():
         session['user_id'] = str(user['_id'])
         flash('Logged in successfully!', 'success')
         return redirect(url_for('dashboard.index'))
-        
-    # Create flow instance to manage the OAuth 2.0 Authorization Grant Flow
-    flow = Flow.from_client_config(
-        {
-            "web": {
-                "client_id": current_app.config['GOOGLE_CLIENT_ID'],
-                "client_secret": current_app.config['GOOGLE_CLIENT_SECRET'],
-                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                "token_uri": "https://oauth2.googleapis.com/token",
-                "redirect_uris": [url_for('auth.oauth2callback', _external=True)]
-            }
-        },
-        scopes=SCOPES
-    )
-
-    # Generate URL for request to Google's OAuth 2.0 server
-    authorization_url, state = flow.authorization_url(
-        access_type='offline',
-        include_granted_scopes='true'
-    )
-
-    session['state'] = state
-    return redirect(authorization_url)
+    
+    # Show login form for GET requests
+    return render_template('auth/login.html')
 
 @auth.route('/oauth2callback')
 def oauth2callback():
