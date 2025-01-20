@@ -84,18 +84,20 @@
                             id="user-menu">
                             <a href="{{ url_for('dashboard.index') }}" class="block px-4 py-2 text-sm text-gray-700"
                                 role="menuitem" tabindex="-1">Dashboard</a>
-                            <a href="{{ url_for('auth_blueprint.logout') }}" class="block px-4 py-2 text-sm text-gray-700"
+                            <a href="{{ url_for('auth.logout') }}" class="block px-4 py-2 text-sm text-gray-700"
                                 role="menuitem" tabindex="-1">Sign out</a>
                         </div>
                     </div>
                     {% else %}
                     <div class="flex space-x-4">
-                        <a href="{{ url_for('auth_blueprint.login') }}"
-                            class="text-gray-500 hover:text-gray-700 px-3 py-2 rounded-md text-sm font-medium">Sign
-                            in</a>
-                        <a href="{{ url_for('auth_blueprint.register') }}"
-                            class="bg-primary-600 text-white hover:bg-primary-700 px-3 py-2 rounded-md text-sm font-medium">Sign
-                            up</a>
+                        <a href="{{ url_for('auth.login') }}"
+                            class="text-gray-500 hover:text-gray-700 inline-flex items-center px-1 pt-1 text-sm font-medium">
+                            Sign in
+                        </a>
+                        <a href="{{ url_for('auth.register') }}"
+                            class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500">
+                            Sign up
+                        </a>
                     </div>
                     {% endif %}
                 </div>
