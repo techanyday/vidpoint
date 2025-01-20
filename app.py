@@ -6,7 +6,10 @@ from models.user import User
 from config.pricing import PRICING_PLANS, CREDIT_PACKAGES
 from config import SQUARE_CONFIG, FLASK_CONFIG, validate_config
 from auth import auth
-from routes import dashboard, payments, test_email, webhooks
+from routes.dashboard import bp as dashboard_bp
+from routes.payments import bp as payments_bp
+from routes.test_email import bp as test_email_bp
+from routes.webhooks import bp as webhooks_bp
 import os
 import logging
 from datetime import datetime, timedelta
@@ -29,10 +32,10 @@ app = Flask(__name__,
 
 # Register blueprints
 app.register_blueprint(auth)
-app.register_blueprint(dashboard)
-app.register_blueprint(payments)
-app.register_blueprint(test_email)
-app.register_blueprint(webhooks)
+app.register_blueprint(dashboard_bp)
+app.register_blueprint(payments_bp)
+app.register_blueprint(test_email_bp)
+app.register_blueprint(webhooks_bp)
 
 # Enable debug mode for development
 app.debug = True
