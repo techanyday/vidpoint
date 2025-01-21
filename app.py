@@ -51,11 +51,13 @@ def create_app():
         DEBUG=not is_production,
         GOOGLE_CLIENT_ID=os.environ.get('GOOGLE_CLIENT_ID'),
         GOOGLE_CLIENT_SECRET=os.environ.get('GOOGLE_CLIENT_SECRET'),
-        PERMANENT_SESSION_LIFETIME=timedelta(days=7),
         SESSION_COOKIE_NAME='vidpoint_session',
         SESSION_COOKIE_SECURE=is_production,  # True in production
         SESSION_COOKIE_HTTPONLY=True,
-        SESSION_COOKIE_SAMESITE='Lax'
+        SESSION_COOKIE_SAMESITE='Lax',
+        PERMANENT_SESSION_LIFETIME=timedelta(days=7),
+        SESSION_REFRESH_EACH_REQUEST=True,
+        SESSION_COOKIE_DOMAIN='.onrender.com' if is_production else None
     )
     
     # Load configuration
