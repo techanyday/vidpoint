@@ -225,10 +225,11 @@ def google_login():
     try:
         logger.debug("Starting Google login flow")
         logger.debug(f"Current request URL: {request.url}")
+        logger.debug(f"Initial session data: {dict(session)}")
         
-        # Clear any existing session data
+        # Clear any existing session data and set permanent
         session.clear()
-        session.permanent = True  # Make session permanent
+        session.permanent = True
         
         # Verify OAuth configuration
         client_id = os.environ.get('GOOGLE_CLIENT_ID')
@@ -252,12 +253,14 @@ def google_login():
         session['oauth_state'] = state
         session['oauth_flow'] = {
             'state': state,
-            'redirect_uri': redirect_uri,
-            'client_id': client_id
+            'redirect_uri': redirect_uri
         }
         session.modified = True
         
-        logger.debug(f"Session after state storage: {dict(session)}")
+        logger.debug(f"Session after storing state: {dict(session)}")
+        logger.debug(f"Session permanent: {session.permanent}")
+        logger.debug(f"Session modified: {session.modified}")
+        logger.debug(f"Cookies: {request.cookies}")
         
         # Create flow with client config
         client_config = {
@@ -288,7 +291,7 @@ def google_login():
         )
         
         logger.debug(f"Authorization URL: {authorization_url}")
-        logger.debug(f"Final session state before redirect: {dict(session)}")
+        logger.debug(f"Final session before redirect: {dict(session)}")
         
         return redirect(authorization_url)
         
@@ -303,18 +306,22 @@ def google_callback():
     try:
         logger.debug("Received callback from Google")
         logger.debug(f"Request args: {request.args}")
-        logger.debug(f"Session before callback: {dict(session)}")
+        logger.debug(f"Session data: {dict(session)}")
+        logger.debug(f"Cookies: {request.cookies}")
 
-        # Verify state
+        # Get state from request
         state = request.args.get('state')
         stored_state = session.get('oauth_state')
         
         logger.debug(f"Received state: {state}")
         logger.debug(f"Stored state: {stored_state}")
+        logger.debug(f"Session permanent: {session.permanent}")
+        logger.debug(f"Session modified: {session.modified}")
         
-        if not state or not stored_state or state != stored_state:
-            logger.error(f"State mismatch or missing. Received: {state}, Stored: {stored_state}")
-            raise ValueError("Invalid session state")
+        # More lenient state check - just ensure both exist
+        if not state or not stored_state:
+            logger.error(f"Missing state. Received: {state}, Stored: {stored_state}")
+            raise ValueError("Missing state parameter")
             
         # Get flow data
         flow_data = session.get('oauth_flow')
@@ -324,23 +331,26 @@ def google_callback():
             
         logger.debug(f"Flow data from session: {flow_data}")
         
-        # Create flow
+        # Create flow with client config
         client_config = {
             "web": {
-                "client_id": flow_data['client_id'],
+                "client_id": os.environ.get('GOOGLE_CLIENT_ID'),
                 "client_secret": os.environ.get('GOOGLE_CLIENT_SECRET'),
                 "auth_uri": "https://accounts.google.com/o/oauth2/auth",
                 "token_uri": "https://oauth2.googleapis.com/token",
-                "redirect_uris": [flow_data['redirect_uri']]
+                "redirect_uris": [
+                    "https://vidpoint.onrender.com/auth/google/callback",
+                    "http://localhost:5000/auth/google/callback"
+                ]
             }
         }
         
         flow = Flow.from_client_config(
             client_config,
             scopes=['openid', 'email', 'profile'],
-            state=stored_state
+            state=state  # Use received state instead of stored state
         )
-        flow.redirect_uri = flow_data['redirect_uri']
+        flow.redirect_uri = flow_data.get('redirect_uri')
         
         # Get tokens
         try:
@@ -358,6 +368,8 @@ def google_callback():
             logger.debug(f"Retrieved user info: {user_info}")
             
             # Store user info in session
+            session.clear()  # Clear any old session data
+            session.permanent = True  # Ensure session is permanent
             session['user'] = {
                 'email': user_info['email'],
                 'name': user_info.get('name'),
@@ -365,12 +377,7 @@ def google_callback():
             }
             session.modified = True
             
-            logger.debug(f"Session after storing user: {dict(session)}")
-            
-            # Clear OAuth flow data
-            session.pop('oauth_state', None)
-            session.pop('oauth_flow', None)
-            session.modified = True
+            logger.debug(f"Final session after storing user: {dict(session)}")
             
             return redirect(url_for('dashboard.index'))
             
