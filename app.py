@@ -17,7 +17,6 @@ from datetime import datetime, timedelta
 from functools import wraps
 from jinja2 import FileSystemLoader
 import secrets
-import redis
 
 # Allow OAuth over HTTP for local development
 if os.environ.get('FLASK_ENV') == 'development':
