@@ -51,6 +51,9 @@ audio.wav
 *.pptx
 credentials.json
 
+# Google OAuth
+auth/client_secrets.json
+
 # Dependencies
 node_modules/
 package-lock.json

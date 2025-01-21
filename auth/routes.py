@@ -225,23 +225,41 @@ def google_login():
     try:
         logger.debug("Starting Google login flow")
         logger.debug(f"Current request URL: {request.url}")
-        logger.debug(f"Session before login: {dict(session)}")
+        
+        # Clear any existing session data
+        session.clear()
+        session.permanent = True  # Make session permanent
         
         # Verify OAuth configuration
-        client_id = current_app.config['GOOGLE_CLIENT_ID']
-        client_secret = current_app.config['GOOGLE_CLIENT_SECRET']
+        client_id = os.environ.get('GOOGLE_CLIENT_ID')
+        client_secret = os.environ.get('GOOGLE_CLIENT_SECRET')
         
-        if not client_id or client_id != "888239351498-jiim27rd47dngpccc1ed2a9pd7c7m082.apps.googleusercontent.com":
-            raise ValueError("Invalid Google Client ID")
+        if not client_id:
+            raise ValueError("Google Client ID not configured")
         if not client_secret:
             raise ValueError("Google Client Secret not configured")
             
         # Create client config
-        # Use https for production, http for local development
         scheme = 'https' if os.environ.get('FLASK_ENV') == 'production' else 'http'
         redirect_uri = url_for('auth.google_callback', _external=True, _scheme=scheme)
         logger.debug(f"Redirect URI: {redirect_uri}")
         
+        # Generate state
+        state = secrets.token_urlsafe(32)
+        logger.debug(f"Generated state: {state}")
+        
+        # Store state in session
+        session['oauth_state'] = state
+        session['oauth_flow'] = {
+            'state': state,
+            'redirect_uri': redirect_uri,
+            'client_id': client_id
+        }
+        session.modified = True
+        
+        logger.debug(f"Session after state storage: {dict(session)}")
+        
+        # Create flow with client config
         client_config = {
             "web": {
                 "client_id": client_id,
@@ -255,20 +273,6 @@ def google_login():
             }
         }
         
-        # Generate state
-        state = secrets.token_urlsafe(32)
-        session['oauth_state'] = state
-        session['oauth_flow'] = {
-            'state': state,
-            'redirect_uri': redirect_uri,
-            'client_id': client_id
-        }
-        session.modified = True
-        
-        logger.debug(f"Generated state: {state}")
-        logger.debug(f"Session after state: {dict(session)}")
-        
-        # Create flow
         flow = Flow.from_client_config(
             client_config,
             scopes=['openid', 'email', 'profile'],
@@ -284,6 +288,8 @@ def google_login():
         )
         
         logger.debug(f"Authorization URL: {authorization_url}")
+        logger.debug(f"Final session state before redirect: {dict(session)}")
+        
         return redirect(authorization_url)
         
     except Exception as e:
@@ -295,42 +301,34 @@ def google_login():
 def google_callback():
     """Handle the Google OAuth callback."""
     try:
-        # Log request details
-        logger.debug("Received callback request")
-        logger.debug(f"Query string: {request.args}")
+        logger.debug("Received callback from Google")
+        logger.debug(f"Request args: {request.args}")
         logger.debug(f"Session before callback: {dict(session)}")
-        
-        # Check for error in callback
-        if 'error' in request.args:
-            logger.error(f"Error in OAuth callback: {request.args.get('error')}")
-            flash('Authentication failed. Please try again.', 'error')
-            return redirect(url_for('auth.login'))
-            
+
         # Verify state
-        received_state = request.args.get('state')
+        state = request.args.get('state')
         stored_state = session.get('oauth_state')
-        logger.debug(f"Received state: {received_state}")
+        
+        logger.debug(f"Received state: {state}")
         logger.debug(f"Stored state: {stored_state}")
         
-        if not received_state or not stored_state or received_state != stored_state:
-            logger.error("State mismatch or missing")
-            logger.error(f"Received state: {received_state}")
-            logger.error(f"Stored state: {stored_state}")
-            flash('Invalid session state. Please try again.', 'error')
-            return redirect(url_for('auth.login'))
+        if not state or not stored_state or state != stored_state:
+            logger.error(f"State mismatch or missing. Received: {state}, Stored: {stored_state}")
+            raise ValueError("Invalid session state")
             
-        # Get stored flow data
+        # Get flow data
         flow_data = session.get('oauth_flow')
         if not flow_data:
-            logger.error("No flow data in session")
-            flash('Session expired. Please try again.', 'error')
-            return redirect(url_for('auth.login'))
+            logger.error("No flow data found in session")
+            raise ValueError("No OAuth flow data found")
             
-        # Recreate the flow
+        logger.debug(f"Flow data from session: {flow_data}")
+        
+        # Create flow
         client_config = {
             "web": {
                 "client_id": flow_data['client_id'],
-                "client_secret": current_app.config['GOOGLE_CLIENT_SECRET'],
+                "client_secret": os.environ.get('GOOGLE_CLIENT_SECRET'),
                 "auth_uri": "https://accounts.google.com/o/oauth2/auth",
                 "token_uri": "https://oauth2.googleapis.com/token",
                 "redirect_uris": [flow_data['redirect_uri']]
@@ -344,71 +342,55 @@ def google_callback():
         )
         flow.redirect_uri = flow_data['redirect_uri']
         
-        # Process the callback
+        # Get tokens
         try:
             flow.fetch_token(authorization_response=request.url)
         except Exception as e:
             logger.error(f"Error fetching token: {str(e)}", exc_info=True)
-            flash('Failed to complete authentication. Please try again.', 'error')
-            return redirect(url_for('auth.login'))
+            raise ValueError("Failed to get token from Google")
             
-        credentials = flow.credentials
-        
+        # Get user info
         try:
-            # Get user info from Google
-            oauth2_client = build('oauth2', 'v2', credentials=credentials)
-            user_info = oauth2_client.userinfo().get().execute()
+            credentials = flow.credentials
+            service = build('oauth2', 'v2', credentials=credentials)
+            user_info = service.userinfo().get().execute()
             
             logger.debug(f"Retrieved user info: {user_info}")
             
-            # Get or create user
-            db = get_db()
-            user = db.get_user_by_email(user_info['email'])
-            
-            if user:
-                # Update existing user
-                db.update_user(user['_id'], {
-                    'name': user_info.get('name'),
-                    'picture': user_info.get('picture'),
-                    'last_login': datetime.utcnow()
-                })
-            else:
-                # Create new user
-                user = db.create_user({
-                    'email': user_info['email'],
-                    'name': user_info.get('name'),
-                    'picture': user_info.get('picture'),
-                    'created_at': datetime.utcnow(),
-                    'last_login': datetime.utcnow()
-                })
-                
-            # Set session data
-            session['user_id'] = str(user['_id'])
+            # Store user info in session
+            session['user'] = {
+                'email': user_info['email'],
+                'name': user_info.get('name'),
+                'picture': user_info.get('picture')
+            }
             session.modified = True
             
-            logger.debug(f"Session after login: {dict(session)}")
+            logger.debug(f"Session after storing user: {dict(session)}")
             
-            flash('Successfully signed in!', 'success')
+            # Clear OAuth flow data
+            session.pop('oauth_state', None)
+            session.pop('oauth_flow', None)
+            session.modified = True
+            
             return redirect(url_for('dashboard.index'))
             
         except Exception as e:
-            logger.error(f"Error processing user info: {str(e)}", exc_info=True)
-            flash('Failed to process user information. Please try again.', 'error')
-            return redirect(url_for('auth.login'))
+            logger.error(f"Error getting user info: {str(e)}", exc_info=True)
+            raise ValueError("Failed to get user info from Google")
             
     except Exception as e:
-        logger.error(f"Error in callback: {str(e)}", exc_info=True)
-        flash('An error occurred during Google login. Please try again.', 'error')
+        logger.error(f"Error in Google callback: {str(e)}", exc_info=True)
+        flash('Failed to complete authentication. Please try again.', 'error')
         return redirect(url_for('auth.login'))
 
 @auth.route('/debug/oauth')
 def debug_oauth():
     """Debug route to check OAuth configuration."""
-    if not current_app.config.get('GOOGLE_CLIENT_ID') or not current_app.config.get('GOOGLE_CLIENT_SECRET'):
+    if not os.environ.get('GOOGLE_CLIENT_ID') or not os.environ.get('GOOGLE_CLIENT_SECRET'):
         return jsonify({
             'error': 'OAuth credentials not configured',
-            'client_id_configured': bool(current_app.config.get('GOOGLE_CLIENT_ID')),
-            'client_secret_configured': bool(current_app.config.get('GOOGLE_CLIENT_SECRET'))
+            'client_id_configured': bool(os.environ.get('GOOGLE_CLIENT_ID')),
+            'client_secret_configured': bool(os.environ.get('GOOGLE_CLIENT_SECRET'))
         })
     
     return jsonify({
@@ -423,8 +405,8 @@ def debug_oauth():
             'scheme': request.scheme
         },
         'oauth_config': {
-            'client_id_length': len(current_app.config['GOOGLE_CLIENT_ID']),
-            'client_secret_length': len(current_app.config['GOOGLE_CLIENT_SECRET']),
+            'client_id_length': len(os.environ.get('GOOGLE_CLIENT_ID')),
+            'client_secret_length': len(os.environ.get('GOOGLE_CLIENT_SECRET')),
             'insecure_transport': os.environ.get('OAUTHLIB_INSECURE_TRANSPORT') == '1'
         }
     })
@@ -433,8 +415,8 @@ def debug_oauth():
 def debug_env():
     """Debug route to check environment variables."""
     return jsonify({
-        'google_client_id_configured': bool(current_app.config.get('GOOGLE_CLIENT_ID')),
-        'google_client_secret_configured': bool(current_app.config.get('GOOGLE_CLIENT_SECRET')),
+        'google_client_id_configured': bool(os.environ.get('GOOGLE_CLIENT_ID')),
+        'google_client_secret_configured': bool(os.environ.get('GOOGLE_CLIENT_SECRET')),
         'flask_env': os.environ.get('FLASK_ENV'),
         'flask_debug': os.environ.get('FLASK_DEBUG'),
         'oauthlib_insecure_transport': os.environ.get('OAUTHLIB_INSECURE_TRANSPORT'),
