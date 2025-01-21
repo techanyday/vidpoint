@@ -17,6 +17,7 @@ from datetime import datetime, timedelta
 from functools import wraps
 from jinja2 import FileSystemLoader
 import secrets
+from flask_session import Session
 
 # Allow OAuth over HTTP for local development
 if os.environ.get('FLASK_ENV') == 'development':
@@ -51,14 +52,22 @@ def create_app():
         DEBUG=not is_production,
         GOOGLE_CLIENT_ID=os.environ.get('GOOGLE_CLIENT_ID'),
         GOOGLE_CLIENT_SECRET=os.environ.get('GOOGLE_CLIENT_SECRET'),
+        SESSION_TYPE='filesystem',  # Use filesystem-based session
+        SESSION_FILE_DIR=os.path.join(os.path.dirname(__file__), 'flask_session'),  # Store sessions in flask_session directory
+        SESSION_PERMANENT=True,
+        PERMANENT_SESSION_LIFETIME=timedelta(days=7),
         SESSION_COOKIE_NAME='vidpoint_session',
-        SESSION_COOKIE_SECURE=is_production,  # True in production
+        SESSION_COOKIE_SECURE=is_production,
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE='Lax',
-        PERMANENT_SESSION_LIFETIME=timedelta(days=7),
-        SESSION_REFRESH_EACH_REQUEST=True,
-        SESSION_COOKIE_DOMAIN='.onrender.com' if is_production else None
+        SESSION_REFRESH_EACH_REQUEST=True
     )
+    
+    # Ensure session directory exists
+    os.makedirs(app.config['SESSION_FILE_DIR'], exist_ok=True)
+    
+    # Initialize Flask-Session
+    Session(app)
     
     # Load configuration
     app.config.update(

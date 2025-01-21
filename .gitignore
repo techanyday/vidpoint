@@ -58,6 +58,9 @@ auth/client_secrets.json
 node_modules/
 package-lock.json
 
+# Flask session files
+flask_session/
+
 # Temporary files
 *.tmp
 *.temp
