@@ -58,14 +58,12 @@ def create_app():
         SESSION_TYPE='filesystem',
         SESSION_FILE_DIR=session_dir,
         SESSION_PERMANENT=True,
-        PERMANENT_SESSION_LIFETIME=session_lifetime,
+        PERMANENT_SESSION_LIFETIME=session_lifetime,  # Only set this once
         SESSION_COOKIE_NAME='vidpoint_session',
         SESSION_COOKIE_SECURE=is_production,
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE='Lax',
         SESSION_REFRESH_EACH_REQUEST=True,
-        # Set explicit max age for the session cookie
-        PERMANENT_SESSION_LIFETIME=session_lifetime,
         SESSION_COOKIE_AGE=session_lifetime_seconds,
         SESSION_COOKIE_EXPIRES=True  # Ensure cookie has an expiry
     )
