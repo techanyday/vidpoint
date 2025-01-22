@@ -47,6 +47,10 @@ def create_app():
     
     logger.debug(f"Using session directory: {session_dir}")
     
+    # Calculate session lifetime in seconds (7 days)
+    session_lifetime = timedelta(days=7)
+    session_lifetime_seconds = int(session_lifetime.total_seconds())
+    
     app.config.update(
         DEBUG=not is_production,
         GOOGLE_CLIENT_ID=os.environ.get('GOOGLE_CLIENT_ID'),
@@ -54,13 +58,19 @@ def create_app():
         SESSION_TYPE='filesystem',
         SESSION_FILE_DIR=session_dir,
         SESSION_PERMANENT=True,
-        PERMANENT_SESSION_LIFETIME=timedelta(days=7),
+        PERMANENT_SESSION_LIFETIME=session_lifetime,
         SESSION_COOKIE_NAME='vidpoint_session',
         SESSION_COOKIE_SECURE=is_production,
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE='Lax',
-        SESSION_REFRESH_EACH_REQUEST=True
+        SESSION_REFRESH_EACH_REQUEST=True,
+        # Set explicit max age for the session cookie
+        PERMANENT_SESSION_LIFETIME=session_lifetime,
+        SESSION_COOKIE_AGE=session_lifetime_seconds,
+        SESSION_COOKIE_EXPIRES=True  # Ensure cookie has an expiry
     )
+    
+    logger.debug(f"Session cookie age: {session_lifetime_seconds} seconds")
     
     # Ensure session directory exists and is writable
     try:
@@ -264,6 +274,14 @@ def create_app():
         except Exception as e:
             logger.error(f"Error exporting content: {str(e)}", exc_info=True)
             return jsonify({"error": str(e)}), 500
+
+    # Add session cookie configuration check
+    @app.before_request
+    def check_session_config():
+        if not request.cookies.get(app.config['SESSION_COOKIE_NAME']):
+            logger.debug("No session cookie found in request")
+        else:
+            logger.debug(f"Session cookie found: {request.cookies[app.config['SESSION_COOKIE_NAME']]}")
 
     return app
 

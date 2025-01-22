@@ -226,6 +226,7 @@ def google_login():
         logger.debug("Starting Google login flow")
         logger.debug(f"Current request URL: {request.url}")
         logger.debug(f"Initial session data: {dict(session)}")
+        logger.debug(f"Initial cookies: {request.cookies}")
         
         # Clear any existing session data and set permanent
         session.clear()
@@ -260,7 +261,7 @@ def google_login():
         logger.debug(f"Session after storing state: {dict(session)}")
         logger.debug(f"Session permanent: {session.permanent}")
         logger.debug(f"Session modified: {session.modified}")
-        logger.debug(f"Cookies: {request.cookies}")
+        logger.debug(f"Response cookies: {request.cookies}")
         
         # Create flow with client config
         client_config = {
@@ -291,9 +292,23 @@ def google_login():
         )
         
         logger.debug(f"Authorization URL: {authorization_url}")
-        logger.debug(f"Final session before redirect: {dict(session)}")
         
-        return redirect(authorization_url)
+        # Create response with redirect
+        response = redirect(authorization_url)
+        # Ensure cookie is set with proper max age
+        max_age = current_app.config.get('SESSION_COOKIE_AGE', 7 * 24 * 60 * 60)  # Default to 7 days
+        response.set_cookie(
+            current_app.config['SESSION_COOKIE_NAME'],
+            session.sid,
+            max_age=max_age,
+            secure=current_app.config['SESSION_COOKIE_SECURE'],
+            httponly=True,
+            samesite='Lax'
+        )
+        
+        logger.debug(f"Response cookies: {response.headers.get('Set-Cookie')}")
+        
+        return response
         
     except Exception as e:
         logger.error(f"Error in Google login: {str(e)}", exc_info=True)
