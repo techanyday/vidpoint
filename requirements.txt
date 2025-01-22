@@ -1,4 +1,4 @@
-Flask==2.0.1
+Flask==2.2.5
 Flask-Cors==4.0.0
 Flask-Login==0.6.3
 Flask-Session==0.5.0
@@ -10,7 +10,7 @@ reportlab==4.0.8
 yt-dlp==2023.11.16
 pydub==0.25.1
 PyJWT==2.8.0
-Werkzeug==2.0.3
+Werkzeug==2.2.3
 gunicorn==21.2.0
 python-multipart==0.0.6
 Pillow==10.1.0
@@ -19,6 +19,9 @@ whisper>=1.1.10
 torch==2.1.2
 torchaudio==2.1.2
 bcrypt==4.1.2
+moviepy==1.0.3
+boto3==1.34.7
+botocore==1.34.7
 
 # Google OAuth
 requests-oauthlib==1.3.1
