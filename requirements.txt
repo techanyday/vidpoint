@@ -40,7 +40,7 @@ pymongo==4.5.0
 dnspython==2.4.2
 certifi==2023.7.22
 pyOpenSSL==23.2.0
-redis==5.0.1
+redis==4.6.0
 
 # Email
 secure-smtplib==0.1.1

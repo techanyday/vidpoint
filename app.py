@@ -17,7 +17,8 @@ from datetime import datetime, timedelta
 from functools import wraps
 from jinja2 import FileSystemLoader
 import secrets
-from flask_session import Session, FileSystemSessionInterface
+from flask_session import Session
+from redis import Redis
 
 # Allow OAuth over HTTP for local development
 if os.environ.get('FLASK_ENV') == 'development':
@@ -39,49 +40,75 @@ def create_app():
     # Basic Flask config
     is_production = os.environ.get('FLASK_ENV') == 'production'
     
-    # Configure Flask-Session
-    app.config['SESSION_TYPE'] = 'filesystem'
-    app.config['SESSION_FILE_DIR'] = os.path.join(app.instance_path, 'flask_session')
-    app.config['SESSION_PERMANENT'] = True
-    app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7)
-    app.config['SESSION_COOKIE_NAME'] = 'vidpoint_session'
-    app.config['SESSION_COOKIE_SECURE'] = os.environ.get('FLASK_ENV') == 'production'
-    app.config['SESSION_COOKIE_HTTPONLY'] = True
-    app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
-    app.config['SESSION_COOKIE_AGE'] = 7 * 24 * 60 * 60  # 7 days in seconds
-    app.config['SESSION_REFRESH_EACH_REQUEST'] = True
-    app.config['SESSION_FILE_THRESHOLD'] = 500  # Maximum number of session files
-    app.config['SESSION_USE_SIGNER'] = True
+    # Configure Redis for session storage
+    if is_production:
+        app.config['SESSION_TYPE'] = 'redis'
+        app.config['SESSION_REDIS'] = Redis.from_url(os.environ.get('REDIS_URL'))
+    else:
+        app.config['SESSION_TYPE'] = 'filesystem'
+        app.config['SESSION_FILE_DIR'] = os.path.join(app.instance_path, 'flask_session')
+        os.makedirs(app.config['SESSION_FILE_DIR'], exist_ok=True)
     
-    # Ensure session directory exists
-    os.makedirs(app.config['SESSION_FILE_DIR'], exist_ok=True)
+    # Session configuration
+    app.config.update(
+        SECRET_KEY=os.environ.get('SECRET_KEY', secrets.token_hex(32)),
+        SESSION_PERMANENT=True,
+        PERMANENT_SESSION_LIFETIME=timedelta(days=7),
+        SESSION_COOKIE_NAME='vidpoint_session',
+        SESSION_COOKIE_SECURE=is_production,
+        SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_SAMESITE='Lax',
+        SESSION_REFRESH_EACH_REQUEST=True,
+        SESSION_USE_SIGNER=True
+    )
     
     # Initialize Flask-Session
     Session(app)
     
-    # Configure session interface
-    app.session_interface = FileSystemSessionInterface(
-        app.config['SESSION_FILE_DIR'],
-        use_signer=True,
-        permanent=True
-    )
-    
     @app.before_request
     def before_request():
-        # Ensure session directory exists and is writable
-        if not os.path.exists(app.config['SESSION_FILE_DIR']):
-            os.makedirs(app.config['SESSION_FILE_DIR'], exist_ok=True)
-        
-        # Check if session is expired
-        if 'user' in session:
+        """Ensure session is properly initialized and maintained."""
+        try:
+            # Check if we need to create a new session
+            if not session.get('_id'):
+                session['_id'] = secrets.token_hex(16)
+                session.permanent = True
+            
+            # Extend session lifetime on each request
             if session.permanent:
                 app.permanent_session_lifetime = timedelta(days=7)
                 session.modified = True
+            
+            # Log session info for debugging
+            logger.debug(f"Session ID: {session.get('_id')}")
+            logger.debug(f"Session Data: {dict(session)}")
+            logger.debug(f"Session Cookie: {request.cookies.get(app.config['SESSION_COOKIE_NAME'])}")
+            
+        except Exception as e:
+            logger.error(f"Session error in before_request: {str(e)}", exc_info=True)
+            session.clear()
+            
+    @app.after_request
+    def after_request(response):
+        """Ensure proper session handling after each request."""
+        try:
+            # Ensure session cookie is properly set
+            if not request.cookies.get(app.config['SESSION_COOKIE_NAME']) and hasattr(session, 'sid'):
+                cookie_lifetime = app.permanent_session_lifetime.total_seconds()
+                response.set_cookie(
+                    app.config['SESSION_COOKIE_NAME'],
+                    session.sid,
+                    max_age=int(cookie_lifetime),
+                    secure=app.config['SESSION_COOKIE_SECURE'],
+                    httponly=True,
+                    samesite='Lax'
+                )
+                logger.debug(f"Setting new session cookie: {session.sid}")
                 
-        # Log session info for debugging
-        logger.debug(f"Session ID: {session.sid if hasattr(session, 'sid') else 'No SID'}")
-        logger.debug(f"Session Data: {dict(session)}")
-        logger.debug(f"Session Cookie: {request.cookies.get(app.config['SESSION_COOKIE_NAME'])}")
+        except Exception as e:
+            logger.error(f"Session error in after_request: {str(e)}", exc_info=True)
+            
+        return response
     
     # Load configuration
     app.config.update(

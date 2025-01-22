@@ -49,12 +49,22 @@ services:
         value: sandbox
       - key: SQUARE_WEBHOOK_SIGNING_KEY
         sync: false
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: vidpoint-redis
+          property: connectionString
     healthCheckPath: /
     autoDeploy: true
     disk:
       name: vidpoint-data
       mountPath: /data
       sizeGB: 1
+
+  - type: redis
+    name: vidpoint-redis
+    ipAllowList: []
+    plan: free
 
 databases:
   - name: vidpoint-db
