@@ -54,6 +54,15 @@ services:
           type: redis
           name: vidpoint-redis
           property: connectionString
+      - key: SESSION_TYPE
+        value: redis
+      - key: SESSION_REDIS_URL
+        fromService:
+          type: redis
+          name: vidpoint-redis
+          property: connectionString
+      - key: OAUTHLIB_RELAX_TOKEN_SCOPE
+        value: "1"
       - key: FLASK_APP
         value: app.py
       - key: PYTHONUNBUFFERED
@@ -69,8 +78,10 @@ services:
 
   - type: redis
     name: vidpoint-redis
+    region: oregon
+    plan: starter
+    maxmemoryPolicy: noeviction
     ipAllowList: []
-    plan: free
 
 databases:
   - name: vidpoint-db
