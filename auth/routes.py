@@ -232,16 +232,23 @@ def google_login():
         logger.debug(f"Initial session data: {dict(session)}")
         logger.debug(f"Initial cookies: {request.cookies}")
         
-        # Clear any existing session data
+        # Clear any existing session data and set up new session
         session.clear()
         session.permanent = True
         
+        # Ensure session is initialized properly
+        if not hasattr(session, 'sid'):
+            logger.error("Session not properly initialized")
+            flash('Unable to initialize session. Please try again.', 'error')
+            return redirect(url_for('auth.login'))
+            
         # Generate state
         state = secrets.token_urlsafe(32)
         logger.debug(f"Generated state: {state}")
         
         # Store state in session
         session['oauth_state'] = state
+        session['oauth_state_created'] = datetime.utcnow().isoformat()
         session.modified = True
         
         logger.debug(f"Session after storing state: {dict(session)}")
@@ -301,13 +308,21 @@ def google_login():
         
         # Ensure cookie is set with proper max age
         max_age = current_app.config.get('SESSION_COOKIE_AGE', 7 * 24 * 60 * 60)  # Default to 7 days
+        session_cookie = session.sid
+        
+        if not session_cookie:
+            logger.error("No session ID available")
+            flash('Session initialization failed. Please try again.', 'error')
+            return redirect(url_for('auth.login'))
+            
         response.set_cookie(
             current_app.config['SESSION_COOKIE_NAME'],
-            session.sid,
+            session_cookie,
             max_age=max_age,
             secure=current_app.config['SESSION_COOKIE_SECURE'],
             httponly=True,
-            samesite='Lax'
+            samesite='Lax',
+            domain=None  # Allow the browser to set the cookie domain
         )
         
         logger.debug(f"Response cookies: {response.headers.get('Set-Cookie')}")
@@ -329,6 +344,12 @@ def google_callback():
         logger.debug(f"Cookies: {request.cookies}")
         logger.debug(f"Request URL: {request.url}")
         logger.debug(f"Request base URL: {request.base_url}")
+        
+        # Check if session is active
+        if not hasattr(session, 'sid'):
+            logger.error("No active session found")
+            flash('Your session has expired. Please try again.', 'error')
+            return redirect(url_for('auth.login'))
 
         # Check for error in callback
         if 'error' in request.args:
@@ -344,16 +365,28 @@ def google_callback():
         
         # Get state from session
         session_state = session.get('oauth_state')
+        state_created = session.get('oauth_state_created')
         logger.debug(f"Session state: {session_state}")
+        logger.debug(f"State created at: {state_created}")
         
         if not request_state:
             logger.error("No state parameter in request")
-            raise ValueError("Missing state parameter")
+            flash('Invalid request. Please try again.', 'error')
+            return redirect(url_for('auth.login'))
             
         if not session_state:
             logger.error("No state found in session")
             flash('Session expired. Please try again.', 'error')
             return redirect(url_for('auth.login'))
+            
+        # Check state age
+        if state_created:
+            created_time = datetime.fromisoformat(state_created)
+            age = datetime.utcnow() - created_time
+            if age > timedelta(minutes=10):
+                logger.error(f"State too old: {age}")
+                flash('Authentication timeout. Please try again.', 'error')
+                return redirect(url_for('auth.login'))
             
         # Log state comparison
         logger.debug(f"State comparison - Request: {request_state}, Session: {session_state}")

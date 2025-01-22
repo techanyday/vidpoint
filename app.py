@@ -17,7 +17,7 @@ from datetime import datetime, timedelta
 from functools import wraps
 from jinja2 import FileSystemLoader
 import secrets
-from flask_session import Session
+from flask_session import Session, FileSystemSessionInterface
 
 # Allow OAuth over HTTP for local development
 if os.environ.get('FLASK_ENV') == 'development':
@@ -39,52 +39,49 @@ def create_app():
     # Basic Flask config
     is_production = os.environ.get('FLASK_ENV') == 'production'
     
-    # Set session directory
-    if is_production:
-        session_dir = '/tmp/flask_session'
-    else:
-        session_dir = os.path.join(os.path.dirname(__file__), 'flask_session')
+    # Configure Flask-Session
+    app.config['SESSION_TYPE'] = 'filesystem'
+    app.config['SESSION_FILE_DIR'] = os.path.join(app.instance_path, 'flask_session')
+    app.config['SESSION_PERMANENT'] = True
+    app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7)
+    app.config['SESSION_COOKIE_NAME'] = 'vidpoint_session'
+    app.config['SESSION_COOKIE_SECURE'] = os.environ.get('FLASK_ENV') == 'production'
+    app.config['SESSION_COOKIE_HTTPONLY'] = True
+    app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+    app.config['SESSION_COOKIE_AGE'] = 7 * 24 * 60 * 60  # 7 days in seconds
+    app.config['SESSION_REFRESH_EACH_REQUEST'] = True
+    app.config['SESSION_FILE_THRESHOLD'] = 500  # Maximum number of session files
+    app.config['SESSION_USE_SIGNER'] = True
     
-    logger.debug(f"Using session directory: {session_dir}")
-    
-    # Calculate session lifetime in seconds (7 days)
-    session_lifetime = timedelta(days=7)
-    session_lifetime_seconds = int(session_lifetime.total_seconds())
-    
-    app.config.update(
-        DEBUG=not is_production,
-        GOOGLE_CLIENT_ID=os.environ.get('GOOGLE_CLIENT_ID'),
-        GOOGLE_CLIENT_SECRET=os.environ.get('GOOGLE_CLIENT_SECRET'),
-        SESSION_TYPE='filesystem',
-        SESSION_FILE_DIR=session_dir,
-        SESSION_PERMANENT=True,
-        PERMANENT_SESSION_LIFETIME=session_lifetime,  # Only set this once
-        SESSION_COOKIE_NAME='vidpoint_session',
-        SESSION_COOKIE_SECURE=is_production,
-        SESSION_COOKIE_HTTPONLY=True,
-        SESSION_COOKIE_SAMESITE='Lax',
-        SESSION_REFRESH_EACH_REQUEST=True,
-        SESSION_COOKIE_AGE=session_lifetime_seconds,
-        SESSION_COOKIE_EXPIRES=True  # Ensure cookie has an expiry
-    )
-    
-    logger.debug(f"Session cookie age: {session_lifetime_seconds} seconds")
-    
-    # Ensure session directory exists and is writable
-    try:
-        os.makedirs(app.config['SESSION_FILE_DIR'], exist_ok=True)
-        test_file = os.path.join(app.config['SESSION_FILE_DIR'], 'test_write')
-        with open(test_file, 'w') as f:
-            f.write('test')
-        os.remove(test_file)
-        logger.debug("Successfully verified session directory is writable")
-    except Exception as e:
-        logger.error(f"Error with session directory: {str(e)}")
-        raise
+    # Ensure session directory exists
+    os.makedirs(app.config['SESSION_FILE_DIR'], exist_ok=True)
     
     # Initialize Flask-Session
     Session(app)
-    logger.debug("Flask-Session initialized")
+    
+    # Configure session interface
+    app.session_interface = FileSystemSessionInterface(
+        app.config['SESSION_FILE_DIR'],
+        use_signer=True,
+        permanent=True
+    )
+    
+    @app.before_request
+    def before_request():
+        # Ensure session directory exists and is writable
+        if not os.path.exists(app.config['SESSION_FILE_DIR']):
+            os.makedirs(app.config['SESSION_FILE_DIR'], exist_ok=True)
+        
+        # Check if session is expired
+        if 'user' in session:
+            if session.permanent:
+                app.permanent_session_lifetime = timedelta(days=7)
+                session.modified = True
+                
+        # Log session info for debugging
+        logger.debug(f"Session ID: {session.sid if hasattr(session, 'sid') else 'No SID'}")
+        logger.debug(f"Session Data: {dict(session)}")
+        logger.debug(f"Session Cookie: {request.cookies.get(app.config['SESSION_COOKIE_NAME'])}")
     
     # Load configuration
     app.config.update(
@@ -272,14 +269,6 @@ def create_app():
         except Exception as e:
             logger.error(f"Error exporting content: {str(e)}", exc_info=True)
             return jsonify({"error": str(e)}), 500
-
-    # Add session cookie configuration check
-    @app.before_request
-    def check_session_config():
-        if not request.cookies.get(app.config['SESSION_COOKIE_NAME']):
-            logger.debug("No session cookie found in request")
-        else:
-            logger.debug(f"Session cookie found: {request.cookies[app.config['SESSION_COOKIE_NAME']]}")
 
     # Add error handlers
     @app.errorhandler(404)
