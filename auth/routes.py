@@ -158,6 +158,7 @@ def login():
                     "token_uri": "https://oauth2.googleapis.com/token",
                     "redirect_uris": [
                         "https://vidpoint.onrender.com/auth/google/callback",
+                        "http://vidpoint.onrender.com/auth/google/callback",
                         "http://localhost:10000/auth/google/callback",
                         "http://localhost:5000/auth/google/callback"
                     ]
@@ -281,7 +282,13 @@ def google_login():
                 "token_uri": "https://oauth2.googleapis.com/token",
                 "redirect_uris": [
                     "https://vidpoint.onrender.com/auth/google/callback",
+                    "http://vidpoint.onrender.com/auth/google/callback",
                     "http://localhost:5000/auth/google/callback"
+                ],
+                "javascript_origins": [
+                    "https://vidpoint.onrender.com",
+                    "http://vidpoint.onrender.com",
+                    "http://localhost:5000"
                 ]
             }
         }
@@ -423,7 +430,13 @@ def google_callback():
                 "token_uri": "https://oauth2.googleapis.com/token",
                 "redirect_uris": [
                     "https://vidpoint.onrender.com/auth/google/callback",
+                    "http://vidpoint.onrender.com/auth/google/callback",
                     "http://localhost:5000/auth/google/callback"
+                ],
+                "javascript_origins": [
+                    "https://vidpoint.onrender.com",
+                    "http://vidpoint.onrender.com",
+                    "http://localhost:5000"
                 ]
             }
         }

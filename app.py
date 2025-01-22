@@ -306,6 +306,15 @@ def create_app():
             logger.error(f"Error exporting content: {str(e)}", exc_info=True)
             return jsonify({"error": str(e)}), 500
 
+    # Add routes for privacy and terms
+    @app.route('/privacy')
+    def privacy():
+        return render_template('privacy.html', current_date=datetime.utcnow().strftime('%B %d, %Y'))
+
+    @app.route('/terms')
+    def terms():
+        return render_template('terms.html', current_date=datetime.utcnow().strftime('%B %d, %Y'))
+
     # Add error handlers
     @app.errorhandler(404)
     def not_found_error(error):
