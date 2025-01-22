@@ -1,9 +1,13 @@
 """Dashboard routes for VidPoint."""
-from flask import Blueprint, render_template, request, flash, redirect, url_for, current_app
+from flask import Blueprint, render_template, request, flash, redirect, url_for, current_app, session
 from flask_login import login_required, current_user
 from datetime import datetime, timedelta
 from models.database import get_db
 import json
+from utils.auth import login_required
+import logging
+
+logger = logging.getLogger(__name__)
 
 bp = Blueprint('dashboard', __name__, url_prefix='/dashboard')
 
@@ -11,39 +15,43 @@ bp = Blueprint('dashboard', __name__, url_prefix='/dashboard')
 @login_required
 def index():
     """Display user dashboard."""
-    db = get_db()
-    
-    # Get user's recent transactions
-    transactions = db.get_user_transactions(current_user.id, limit=5)
-    
-    # Get notification preferences
-    notification_preferences = db.get_notification_preferences(current_user.id)
-    
-    # Get recent notifications
-    notifications = db.get_notification_history(current_user.id, limit=5)
-    
-    # Calculate subscription status
-    subscription = current_user.subscription
-    if subscription:
-        end_date = subscription.get('end_date')
-        if end_date:
-            days_left = (end_date - datetime.now()).days
-            subscription['days_left'] = days_left
-    
-    # Get user stats
-    stats = db.get_user_stats(current_user.id)
-    stats['total_processing_time'] = format_processing_time(
-        stats.get('total_processing_time', 0)
-    )
-    
-    return render_template('dashboard.html',
-                         user=current_user,
-                         transactions=transactions,
-                         notifications=notifications,
-                         notification_preferences=notification_preferences,
-                         stats=stats,
-                         has_more_notifications=len(notifications) == 5,
-                         current_page=1)
+    try:
+        db = get_db()
+        
+        # Get user's recent transactions
+        transactions = db.get_user_transactions(current_user.id, limit=5)
+        
+        # Get notification preferences
+        notification_preferences = db.get_notification_preferences(current_user.id)
+        
+        # Get recent notifications
+        notifications = db.get_notification_history(current_user.id, limit=5)
+        
+        # Calculate subscription status
+        subscription = current_user.subscription
+        if subscription:
+            end_date = subscription.get('end_date')
+            if end_date:
+                days_left = (end_date - datetime.now()).days
+                subscription['days_left'] = days_left
+        
+        # Get user stats
+        stats = db.get_user_stats(current_user.id)
+        stats['total_processing_time'] = format_processing_time(
+            stats.get('total_processing_time', 0)
+        )
+        
+        return render_template('dashboard.html',
+                             user=current_user,
+                             transactions=transactions,
+                             notifications=notifications,
+                             notification_preferences=notification_preferences,
+                             stats=stats,
+                             has_more_notifications=len(notifications) == 5,
+                             current_page=1)
+    except Exception as e:
+        logger.error(f"Error in dashboard: {str(e)}", exc_info=True)
+        return render_template('error.html', error="An error occurred loading the dashboard. Please try again."), 500
 
 @bp.route('/settings', methods=['POST'])
 @login_required

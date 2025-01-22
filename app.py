@@ -93,7 +93,7 @@ def create_app():
     
     # Register blueprints
     app.register_blueprint(auth)
-    app.register_blueprint(dashboard_bp)
+    app.register_blueprint(dashboard_bp, url_prefix='/dashboard')
     app.register_blueprint(payments_bp)
     app.register_blueprint(test_email_bp)
     app.register_blueprint(webhooks_bp)
@@ -281,6 +281,15 @@ def create_app():
         else:
             logger.debug(f"Session cookie found: {request.cookies[app.config['SESSION_COOKIE_NAME']]}")
 
+    # Add error handlers
+    @app.errorhandler(404)
+    def not_found_error(error):
+        return render_template('error.html', error="Page not found."), 404
+
+    @app.errorhandler(500)
+    def internal_error(error):
+        return render_template('error.html', error="An internal error occurred. Please try again."), 500
+    
     return app
 
 # Create the application instance for Gunicorn
