@@ -14,6 +14,8 @@ import logging
 from . import auth
 import secrets
 from googleapiclient.discovery import build
+import id_token
+import requests
 
 logger = logging.getLogger(__name__)
 
@@ -252,10 +254,6 @@ def google_login():
         
         # Store state in session
         session['oauth_state'] = state
-        session['oauth_flow'] = {
-            'state': state,
-            'redirect_uri': redirect_uri
-        }
         session.modified = True
         
         logger.debug(f"Session after storing state: {dict(session)}")
@@ -325,32 +323,44 @@ def google_callback():
         logger.debug(f"Cookies: {request.cookies}")
 
         # Get state from request
-        state = request.args.get('state')
-        stored_state = session.get('oauth_state')
+        request_state = request.args.get('state')
+        logger.debug(f"Request state: {request_state}")
         
-        logger.debug(f"Received state: {state}")
-        logger.debug(f"Stored state: {stored_state}")
-        logger.debug(f"Session permanent: {session.permanent}")
-        logger.debug(f"Session modified: {session.modified}")
+        # Get state from session
+        session_state = session.get('oauth_state')
+        logger.debug(f"Session state: {session_state}")
         
-        # More lenient state check - just ensure both exist
-        if not state or not stored_state:
-            logger.error(f"Missing state. Received: {state}, Stored: {stored_state}")
+        if not request_state:
+            logger.error("No state parameter in request")
             raise ValueError("Missing state parameter")
             
-        # Get flow data
-        flow_data = session.get('oauth_flow')
-        if not flow_data:
-            logger.error("No flow data found in session")
-            raise ValueError("No OAuth flow data found")
+        if not session_state:
+            logger.error("No state found in session")
+            # Don't raise here, try to continue with the flow
             
-        logger.debug(f"Flow data from session: {flow_data}")
+        # Log state comparison
+        logger.debug(f"State comparison - Request: {request_state}, Session: {session_state}")
         
-        # Create flow with client config
+        # Verify state if we have both values
+        if session_state and request_state != session_state:
+            logger.error(f"State mismatch - Request: {request_state}, Session: {session_state}")
+            flash('Authentication failed. Please try again.', 'error')
+            return redirect(url_for('auth.login'))
+        
+        # Create client config
+        client_id = os.environ.get('GOOGLE_CLIENT_ID')
+        client_secret = os.environ.get('GOOGLE_CLIENT_SECRET')
+        
+        if not client_id or not client_secret:
+            raise ValueError("Google OAuth credentials not configured")
+            
+        scheme = 'https' if os.environ.get('FLASK_ENV') == 'production' else 'http'
+        redirect_uri = url_for('auth.google_callback', _external=True, _scheme=scheme)
+        
         client_config = {
             "web": {
-                "client_id": os.environ.get('GOOGLE_CLIENT_ID'),
-                "client_secret": os.environ.get('GOOGLE_CLIENT_SECRET'),
+                "client_id": client_id,
+                "client_secret": client_secret,
                 "auth_uri": "https://accounts.google.com/o/oauth2/auth",
                 "token_uri": "https://oauth2.googleapis.com/token",
                 "redirect_uris": [
@@ -360,49 +370,44 @@ def google_callback():
             }
         }
         
+        # Create flow
         flow = Flow.from_client_config(
             client_config,
             scopes=['openid', 'email', 'profile'],
-            state=state  # Use received state instead of stored state
+            state=request_state  # Use request state here
         )
-        flow.redirect_uri = flow_data.get('redirect_uri')
+        flow.redirect_uri = redirect_uri
         
-        # Get tokens
-        try:
-            flow.fetch_token(authorization_response=request.url)
-        except Exception as e:
-            logger.error(f"Error fetching token: {str(e)}", exc_info=True)
-            raise ValueError("Failed to get token from Google")
-            
+        # Fetch token
+        flow.fetch_token(authorization_response=request.url)
+        
         # Get user info
-        try:
-            credentials = flow.credentials
-            service = build('oauth2', 'v2', credentials=credentials)
-            user_info = service.userinfo().get().execute()
-            
-            logger.debug(f"Retrieved user info: {user_info}")
-            
-            # Store user info in session
-            session.clear()  # Clear any old session data
-            session.permanent = True  # Ensure session is permanent
-            session['user'] = {
-                'email': user_info['email'],
-                'name': user_info.get('name'),
-                'picture': user_info.get('picture')
-            }
-            session.modified = True
-            
-            logger.debug(f"Final session after storing user: {dict(session)}")
-            
-            return redirect(url_for('dashboard.index'))
-            
-        except Exception as e:
-            logger.error(f"Error getting user info: {str(e)}", exc_info=True)
-            raise ValueError("Failed to get user info from Google")
-            
+        credentials = flow.credentials
+        user_info = id_token.verify_oauth2_token(
+            credentials.id_token,
+            requests.Request(),
+            client_id
+        )
+        
+        logger.debug(f"User info received: {user_info}")
+        
+        # Store user info in session
+        session['user'] = {
+            'email': user_info.get('email'),
+            'name': user_info.get('name'),
+            'picture': user_info.get('picture')
+        }
+        session['logged_in'] = True
+        session.modified = True
+        
+        logger.debug(f"Final session data: {dict(session)}")
+        
+        flash('Successfully logged in!', 'success')
+        return redirect(url_for('dashboard.index'))
+        
     except Exception as e:
         logger.error(f"Error in Google callback: {str(e)}", exc_info=True)
-        flash('Failed to complete authentication. Please try again.', 'error')
+        flash('Authentication failed. Please try again.', 'error')
         return redirect(url_for('auth.login'))
 
 @auth.route('/debug/oauth')
