@@ -1,0 +1,17 @@
+.gcloudignore
+.git
+.gitignore
+__pycache__/
+*.pyc
+.env
+.env.local
+.venv/
+venv/
+ENV/
+env/
+.idea/
+.vscode/
+*.log
+node_modules/
+render.yaml
+install_redis.ps1
