@@ -133,6 +133,13 @@ def register():
 @auth.route('/login', methods=['GET', 'POST'])
 def login():
     """Handle user login."""
+    logger.debug(f"Login route called. Method: {request.method}, Args: {request.args}")
+    
+    # Check if Google login is requested
+    if request.method == 'GET' and request.args.get('provider') == 'google':
+        logger.info("Google login requested via provider parameter")
+        return redirect(url_for('auth.google_login'))
+    
     # Clear any existing session
     session.clear()
     
@@ -141,6 +148,8 @@ def login():
             email = request.form.get('email')
             password = request.form.get('password')
             remember = request.form.get('remember') == 'on'
+            
+            logger.debug(f"Login attempt for email: {email}")
             
             if not email or not password:
                 flash('Please provide both email and password.', 'error')
@@ -174,6 +183,22 @@ def login():
 def google_login():
     """Initiate Google OAuth login flow."""
     try:
+        logger.info("Starting Google OAuth flow")
+        logger.debug(f"Request headers: {dict(request.headers)}")
+        logger.debug(f"Request URL: {request.url}")
+        logger.debug(f"Request base URL: {request.base_url}")
+        
+        # Check if Google OAuth is configured
+        client_id = current_app.config.get('GOOGLE_CLIENT_ID')
+        client_secret = current_app.config.get('GOOGLE_CLIENT_SECRET')
+        logger.debug(f"Google Client ID configured: {bool(client_id)}")
+        logger.debug(f"Google Client Secret configured: {bool(client_secret)}")
+        
+        if not client_id or not client_secret:
+            logger.error("Google OAuth credentials not configured")
+            flash('Google login is not configured properly. Please try email login instead.', 'error')
+            return redirect(url_for('auth.login'))
+        
         # Clear any existing session
         session.clear()
         
@@ -182,27 +207,20 @@ def google_login():
         session['created_at'] = datetime.utcnow().isoformat()
         session.modified = True
         
-        # Check if Google OAuth is configured
-        if not current_app.config.get('GOOGLE_CLIENT_ID') or not current_app.config.get('GOOGLE_CLIENT_SECRET'):
-            logger.error("Google OAuth credentials not configured")
-            flash('Google login is not configured properly. Please try email login instead.', 'error')
-            return redirect(url_for('auth.login'))
-            
-        logger.debug("Starting Google login flow")
-        logger.debug(f"Current request URL: {request.url}")
-        logger.debug(f"Initial session data: {dict(session)}")
-        
         # Generate state
         state = secrets.token_urlsafe(32)
         session['oauth_state'] = state
         session['oauth_state_created'] = datetime.utcnow().isoformat()
         session.modified = True
         
+        logger.debug(f"Generated OAuth state: {state}")
+        logger.debug(f"Session data: {dict(session)}")
+        
         # Create client config
         client_config = {
             "web": {
-                "client_id": current_app.config['GOOGLE_CLIENT_ID'],
-                "client_secret": current_app.config['GOOGLE_CLIENT_SECRET'],
+                "client_id": client_id,
+                "client_secret": client_secret,
                 "auth_uri": "https://accounts.google.com/o/oauth2/auth",
                 "token_uri": "https://oauth2.googleapis.com/token",
                 "redirect_uris": [
@@ -217,6 +235,8 @@ def google_login():
                 ]
             }
         }
+        
+        logger.debug(f"Client config: {json.dumps(client_config, indent=2)}")
         
         # Create flow
         flow = Flow.from_client_config(
@@ -258,6 +278,10 @@ def google_login():
                 httponly=True,
                 samesite='Lax'
             )
+            logger.debug(f"Set session cookie: {session.sid}")
+            logger.debug(f"Response cookies: {response.headers.get('Set-Cookie')}")
+        else:
+            logger.warning("No session ID available")
             
         return response
         

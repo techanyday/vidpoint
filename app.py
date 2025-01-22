@@ -49,6 +49,10 @@ def create_app():
         app.config['SESSION_FILE_DIR'] = os.path.join(app.instance_path, 'flask_session')
         os.makedirs(app.config['SESSION_FILE_DIR'], exist_ok=True)
     
+    # Configure OAuth lib
+    if not is_production:
+        os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
+        
     # Configure session
     app.config.update(
         SESSION_TYPE='redis' if is_production else 'filesystem',
