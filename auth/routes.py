@@ -175,8 +175,6 @@ def google_login():
     """Initiate Google OAuth login flow."""
     try:
         logger.info("Starting Google OAuth flow")
-        logger.debug(f"Request headers: {dict(request.headers)}")
-        logger.debug(f"Request URL: {request.url}")
         
         # Check if Google OAuth is configured
         client_id = current_app.config.get('GOOGLE_CLIENT_ID')
@@ -201,6 +199,12 @@ def google_login():
         session['oauth_state_created'] = datetime.utcnow().isoformat()
         session.modified = True
         
+        # Determine the base URL
+        if current_app.config['ENV'] == 'production':
+            base_url = 'https://vidpoint.onrender.com'
+        else:
+            base_url = 'http://localhost:5000'
+            
         # Create flow
         flow = Flow.from_client_config(
             {
@@ -210,9 +214,7 @@ def google_login():
                     "auth_uri": "https://accounts.google.com/o/oauth2/auth",
                     "token_uri": "https://oauth2.googleapis.com/token",
                     "redirect_uris": [
-                        "https://vidpoint.onrender.com/auth/google/callback",
-                        "http://vidpoint.onrender.com/auth/google/callback",
-                        "http://localhost:5000/auth/google/callback"
+                        f"{base_url}/auth/google/callback"
                     ]
                 }
             },
@@ -221,7 +223,7 @@ def google_login():
         )
         
         # Set the redirect URI
-        flow.redirect_uri = url_for('auth.google_callback', _external=True, _scheme='https' if current_app.config['ENV'] == 'production' else 'http')
+        flow.redirect_uri = f"{base_url}/auth/google/callback"
         
         # Generate authorization URL
         authorization_url, _ = flow.authorization_url(
