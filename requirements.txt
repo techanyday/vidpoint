@@ -1,4 +1,4 @@
-Flask==3.0.0
+Flask==2.0.1
 Flask-Cors==4.0.0
 Flask-Login==0.6.3
 Flask-Session==0.5.0
@@ -10,7 +10,7 @@ reportlab==4.0.8
 yt-dlp==2023.11.16
 pydub==0.25.1
 PyJWT==2.8.0
-Werkzeug==3.0.1
+Werkzeug==2.0.3
 gunicorn==21.2.0
 python-multipart==0.0.6
 Pillow==10.1.0
@@ -22,17 +22,18 @@ bcrypt==4.1.2
 
 # Google OAuth
 requests-oauthlib==1.3.1
-google-auth==2.23.0
-google-auth-oauthlib==1.1.0
-google-api-python-client==2.108.0
+google-auth==2.22.0
+google-auth-oauthlib==1.0.0
+google-auth-httplib2==0.1.0
+google-api-python-client==2.95.0
+requests==2.31.0
 
 # Payment Processing
 squareup==39.1.0.20241218
-requests==2.31.0
 
 # Database
 # MongoDB and DNS
-pymongo==4.6.1
+pymongo==4.5.0
 dnspython==2.4.2
 certifi==2023.7.22
 pyOpenSSL==23.2.0

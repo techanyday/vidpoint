@@ -1,10 +1,13 @@
 from flask import redirect, url_for, session, current_app, request, flash, render_template, jsonify
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
-from google.auth.transport.requests import Request
+from google.auth.transport import requests
 from google.auth.exceptions import RefreshError
 from functools import wraps
 import os
+from flask import Blueprint
+from google.oauth2 import id_token
+from googleapiclient.discovery import build
 import json
 from models.user import User
 from models.database import get_db
@@ -13,7 +16,6 @@ from datetime import datetime, timedelta
 import logging
 from . import auth
 import secrets
-from googleapiclient.discovery import build
 import id_token
 import requests
 
@@ -229,7 +231,7 @@ def google_login():
         logger.debug(f"Current request URL: {request.url}")
         logger.debug(f"Initial session data: {dict(session)}")
         logger.debug(f"Initial cookies: {request.cookies}")
-        
+
         # Clear any existing session data and set permanent
         session.clear()
         session.permanent = True
