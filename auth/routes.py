@@ -227,6 +227,12 @@ def login():
 def google_login():
     """Initiate Google OAuth login flow."""
     try:
+        # Check if Google OAuth is configured
+        if not current_app.config.get('GOOGLE_CLIENT_ID') or not current_app.config.get('GOOGLE_CLIENT_SECRET'):
+            logger.error("Google OAuth credentials not configured")
+            flash('Google login is not configured properly. Please try email login instead.', 'error')
+            return redirect(url_for('auth.login'))
+            
         logger.debug("Starting Google login flow")
         logger.debug(f"Current request URL: {request.url}")
         logger.debug(f"Initial session data: {dict(session)}")
@@ -254,13 +260,8 @@ def google_login():
         logger.debug(f"Session after storing state: {dict(session)}")
         
         # Create client config
-        client_id = os.environ.get('GOOGLE_CLIENT_ID')
-        client_secret = os.environ.get('GOOGLE_CLIENT_SECRET')
-        
-        if not client_id:
-            raise ValueError("Google Client ID not configured")
-        if not client_secret:
-            raise ValueError("Google Client Secret not configured")
+        client_id = current_app.config['GOOGLE_CLIENT_ID']
+        client_secret = current_app.config['GOOGLE_CLIENT_SECRET']
         
         # Get the actual scheme from the request
         if request.headers.get('X-Forwarded-Proto') == 'https':

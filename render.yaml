@@ -54,6 +54,12 @@ services:
           type: redis
           name: vidpoint-redis
           property: connectionString
+      - key: FLASK_APP
+        value: app.py
+      - key: PYTHONUNBUFFERED
+        value: true
+      - key: SECRET_KEY
+        generateValue: true
     healthCheckPath: /
     autoDeploy: true
     disk:

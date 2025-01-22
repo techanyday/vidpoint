@@ -112,8 +112,17 @@ def create_app():
     
     # Load configuration
     app.config.update(
-        SECRET_KEY=os.environ.get('FLASK_SECRET_KEY') or secrets.token_hex(32),
+        DEBUG=not is_production,
+        GOOGLE_CLIENT_ID=os.environ.get('GOOGLE_CLIENT_ID'),
+        GOOGLE_CLIENT_SECRET=os.environ.get('GOOGLE_CLIENT_SECRET'),
+        GOOGLE_DISCOVERY_URL="https://accounts.google.com/.well-known/openid-configuration",
+        OAUTHLIB_INSECURE_TRANSPORT=not is_production,  # Allow HTTP in development
+        OAUTHLIB_RELAX_TOKEN_SCOPE=True
     )
+    
+    # Verify Google OAuth configuration
+    if not app.config['GOOGLE_CLIENT_ID'] or not app.config['GOOGLE_CLIENT_SECRET']:
+        logger.warning("Google OAuth credentials not configured. Google login will be disabled.")
     
     # Register blueprints
     app.register_blueprint(auth)
