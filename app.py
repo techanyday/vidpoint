@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, send_file, render_template, session, redirect, url_for
+from flask import Flask, request, jsonify, send_file, render_template, session, redirect, url_for, flash
 # Temporarily comment out video processing imports
 # from process_flow import VideoProcessor
 # from document_exporter import export_to_word, export_to_pdf
@@ -49,64 +49,68 @@ def create_app():
         app.config['SESSION_FILE_DIR'] = os.path.join(app.instance_path, 'flask_session')
         os.makedirs(app.config['SESSION_FILE_DIR'], exist_ok=True)
     
-    # Session configuration
+    # Configure session
     app.config.update(
-        SECRET_KEY=os.environ.get('SECRET_KEY', secrets.token_hex(32)),
-        SESSION_PERMANENT=True,
-        PERMANENT_SESSION_LIFETIME=timedelta(days=7),
+        SESSION_TYPE='redis' if is_production else 'filesystem',
+        SESSION_REDIS=Redis.from_url(os.environ.get('REDIS_URL')) if is_production else None,
         SESSION_COOKIE_NAME='vidpoint_session',
-        SESSION_COOKIE_SECURE=is_production,
-        SESSION_COOKIE_HTTPONLY=True,
-        SESSION_COOKIE_SAMESITE='Lax',
-        SESSION_REFRESH_EACH_REQUEST=True,
-        SESSION_USE_SIGNER=True
+        SESSION_COOKIE_SECURE=is_production,  # Only send cookie over HTTPS in production
+        SESSION_COOKIE_HTTPONLY=True,  # Prevent JavaScript access to session cookie
+        SESSION_COOKIE_SAMESITE='Lax',  # Prevent CSRF
+        PERMANENT_SESSION_LIFETIME=timedelta(days=7),  # Session expires after 7 days
+        SESSION_REFRESH_EACH_REQUEST=True,  # Refresh session on each request
+        SESSION_FILE_THRESHOLD=500  # Maximum number of sessions stored on filesystem
     )
     
-    # Initialize Flask-Session
+    # Initialize session interface
     Session(app)
     
     @app.before_request
     def before_request():
-        """Ensure session is properly initialized and maintained."""
+        """Perform checks before each request."""
         try:
-            # Check if we need to create a new session
-            if not session.get('_id'):
-                session['_id'] = secrets.token_hex(16)
+            # Skip session check for static files
+            if request.endpoint == 'static':
+                return
+                
+            # Initialize session if not exists
+            if not hasattr(session, 'sid'):
                 session.permanent = True
-            
-            # Extend session lifetime on each request
-            if session.permanent:
-                app.permanent_session_lifetime = timedelta(days=7)
                 session.modified = True
             
-            # Log session info for debugging
-            logger.debug(f"Session ID: {session.get('_id')}")
-            logger.debug(f"Session Data: {dict(session)}")
-            logger.debug(f"Session Cookie: {request.cookies.get(app.config['SESSION_COOKIE_NAME'])}")
-            
+            # Check if session is expired
+            created_time = session.get('created_at')
+            if created_time:
+                created_dt = datetime.fromisoformat(created_time)
+                if datetime.utcnow() - created_dt > app.permanent_session_lifetime:
+                    session.clear()
+                    flash('Session expired. Please try again.', 'error')
+                    return redirect(url_for('auth.login'))
+            else:
+                # Set creation time for new sessions
+                session['created_at'] = datetime.utcnow().isoformat()
+                session.modified = True
+                
         except Exception as e:
             logger.error(f"Session error in before_request: {str(e)}", exc_info=True)
             session.clear()
-            
+            flash('Session error occurred. Please try again.', 'error')
+            return redirect(url_for('auth.login'))
+
     @app.after_request
     def after_request(response):
-        """Ensure proper session handling after each request."""
+        """Perform actions after each request."""
         try:
-            # Ensure session cookie is properly set
-            if not request.cookies.get(app.config['SESSION_COOKIE_NAME']) and hasattr(session, 'sid'):
-                cookie_lifetime = app.permanent_session_lifetime.total_seconds()
-                response.set_cookie(
-                    app.config['SESSION_COOKIE_NAME'],
-                    session.sid,
-                    max_age=int(cookie_lifetime),
-                    secure=app.config['SESSION_COOKIE_SECURE'],
-                    httponly=True,
-                    samesite='Lax'
-                )
-                logger.debug(f"Setting new session cookie: {session.sid}")
+            # Extend session lifetime on activity
+            if hasattr(session, 'sid'):
+                session.modified = True
+                
+            # Ensure proper cookie settings
+            if 'Set-Cookie' in response.headers:
+                response.headers['Set-Cookie'] = response.headers['Set-Cookie'].replace('HttpOnly', 'HttpOnly; SameSite=Lax')
                 
         except Exception as e:
-            logger.error(f"Session error in after_request: {str(e)}", exc_info=True)
+            logger.error(f"Error in after_request: {str(e)}", exc_info=True)
             
         return response
     

@@ -133,93 +133,39 @@ def register():
 @auth.route('/login', methods=['GET', 'POST'])
 def login():
     """Handle user login."""
-    # Check if Google login is requested
-    if request.method == 'GET' and request.args.get('provider') == 'google':
-        logger.info("Google login requested")
-        
-        # Log OAuth configuration
-        logger.debug(f"Client ID: {current_app.config.get('GOOGLE_CLIENT_ID')}")
-        logger.debug("Client Secret is configured: %s", bool(current_app.config.get('GOOGLE_CLIENT_SECRET')))
-        logger.debug(f"Request host: {request.host}")
-        logger.debug(f"Request URL: {request.url}")
-        
-        if not current_app.config.get('GOOGLE_CLIENT_ID') or not current_app.config.get('GOOGLE_CLIENT_SECRET'):
-            logger.error("Google OAuth credentials not configured")
-            flash('Google login is not configured properly. Please try email login instead.', 'error')
-            return render_template('auth/login.html')
-        
-        try:
-            # Create flow instance to manage the OAuth 2.0 Authorization Grant Flow
-            client_config = {
-                "web": {
-                    "client_id": current_app.config['GOOGLE_CLIENT_ID'],
-                    "client_secret": current_app.config['GOOGLE_CLIENT_SECRET'],
-                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                    "token_uri": "https://oauth2.googleapis.com/token",
-                    "redirect_uris": [
-                        "https://vidpoint.onrender.com/auth/google/callback",
-                        "http://vidpoint.onrender.com/auth/google/callback",
-                        "http://localhost:10000/auth/google/callback",
-                        "http://localhost:5000/auth/google/callback"
-                    ]
-                }
-            }
-            
-            logger.debug(f"Client config: {json.dumps(client_config, indent=2)}")
-            
-            flow = Flow.from_client_config(
-                client_config,
-                scopes=['openid', 'email', 'profile']
-            )
-            
-            # Set the redirect URI based on the request
-            if request.host.startswith('localhost'):
-                if ':10000' in request.host:
-                    flow.redirect_uri = "http://localhost:10000/auth/google/callback"
-                else:
-                    flow.redirect_uri = "http://localhost:5000/auth/google/callback"
-            else:
-                flow.redirect_uri = "https://vidpoint.onrender.com/auth/google/callback"
-            
-            logger.debug(f"Redirect URI set to: {flow.redirect_uri}")
-
-            # Generate URL for request to Google's OAuth 2.0 server
-            authorization_url, state = flow.authorization_url(
-                access_type='offline',
-                include_granted_scopes='true',
-                prompt='consent'
-            )
-
-            logger.info(f"Generated authorization URL: {authorization_url}")
-            session['state'] = state
-            logger.debug(f"State stored in session: {state}")
-            
-            return redirect(authorization_url)
-            
-        except Exception as e:
-            logger.error(f"Error initiating Google OAuth flow: {str(e)}", exc_info=True)
-            flash('An error occurred while setting up Google login. Please try again later.', 'error')
-            return render_template('auth/login.html')
-
-    # Handle regular email/password login
+    # Clear any existing session
+    session.clear()
+    
     if request.method == 'POST':
-        email = request.form.get('email')
-        password = request.form.get('password')
-        
-        if not email or not password:
-            flash('Email and password are required.', 'error')
-            return render_template('auth/login.html')
+        try:
+            email = request.form.get('email')
+            password = request.form.get('password')
+            remember = request.form.get('remember') == 'on'
             
-        db = get_db()
-        user = db.get_user_by_email(email)
-        
-        if not user or not check_password_hash(user.get('password_hash', ''), password):
-            flash('Invalid email or password.', 'error')
-            return render_template('auth/login.html')
+            if not email or not password:
+                flash('Please provide both email and password.', 'error')
+                return redirect(url_for('auth.login'))
+                
+            # Initialize session
+            session.permanent = True
+            session['created_at'] = datetime.utcnow().isoformat()
+            session.modified = True
             
-        session['user_id'] = str(user['_id'])
-        flash('Logged in successfully!', 'success')
-        return redirect(url_for('dashboard.index'))
+            db = get_db()
+            user = db.get_user_by_email(email)
+            
+            if not user or not check_password_hash(user.get('password_hash', ''), password):
+                flash('Invalid email or password.', 'error')
+                return render_template('auth/login.html')
+                
+            session['user_id'] = str(user['_id'])
+            flash('Logged in successfully!', 'success')
+            return redirect(url_for('dashboard.index'))
+        
+        except Exception as e:
+            logger.error(f"Login error: {str(e)}")
+            flash('An error occurred during login. Please try again.', 'error')
+            return render_template('auth/login.html')
     
     # Show login form for GET requests
     return render_template('auth/login.html')
@@ -228,6 +174,14 @@ def login():
 def google_login():
     """Initiate Google OAuth login flow."""
     try:
+        # Clear any existing session
+        session.clear()
+        
+        # Initialize new session
+        session.permanent = True
+        session['created_at'] = datetime.utcnow().isoformat()
+        session.modified = True
+        
         # Check if Google OAuth is configured
         if not current_app.config.get('GOOGLE_CLIENT_ID') or not current_app.config.get('GOOGLE_CLIENT_SECRET'):
             logger.error("Google OAuth credentials not configured")
@@ -238,10 +192,6 @@ def google_login():
         logger.debug(f"Current request URL: {request.url}")
         logger.debug(f"Initial session data: {dict(session)}")
         logger.debug(f"Initial cookies: {request.cookies}")
-        
-        # Clear any existing session data and set up new session
-        session.clear()
-        session.permanent = True
         
         # Ensure session is initialized properly
         if not hasattr(session, 'sid'):
@@ -353,12 +303,21 @@ def google_callback():
         logger.debug(f"Request URL: {request.url}")
         logger.debug(f"Request base URL: {request.base_url}")
         
-        # Check if session is active
+        # Verify session exists
         if not hasattr(session, 'sid'):
-            logger.error("No active session found")
-            flash('Your session has expired. Please try again.', 'error')
+            logger.error("No session found in callback")
+            flash('Session expired. Please try again.', 'error')
             return redirect(url_for('auth.login'))
-
+            
+        # Check session age
+        created_time = session.get('created_at')
+        if created_time:
+            created_dt = datetime.fromisoformat(created_time)
+            if datetime.utcnow() - created_dt > current_app.permanent_session_lifetime:
+                session.clear()
+                flash('Session expired during OAuth flow. Please try again.', 'error')
+                return redirect(url_for('auth.login'))
+                
         # Check for error in callback
         if 'error' in request.args:
             error = request.args.get('error')
