@@ -1,23 +1,23 @@
-from flask import redirect, url_for, session, current_app, request, flash, render_template, jsonify
+import os
+import logging
+import secrets
+import json
+from flask import (
+    Blueprint, render_template, redirect, url_for, 
+    session, request, flash, current_app, jsonify
+)
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
-from google.auth.transport import requests
-from google.auth.exceptions import RefreshError
-from functools import wraps
-import os
-from flask import Blueprint
 from google.oauth2 import id_token
+from google.auth.transport import requests as google_requests
+from google.auth.exceptions import RefreshError
 from googleapiclient.discovery import build
-import json
+from functools import wraps
 from models.user import User
 from models.database import get_db
+from . import auth
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime, timedelta
-import logging
-from . import auth
-import secrets
-import id_token
-import requests
 
 logger = logging.getLogger(__name__)
 
@@ -317,9 +317,9 @@ def google_login():
 
 @auth.route('/google/callback')
 def google_callback():
-    """Handle the Google OAuth callback."""
+    """Handle the response from Google OAuth."""
     try:
-        logger.debug("Received callback from Google")
+        logger.debug("Received Google callback")
         logger.debug(f"Request args: {request.args}")
         logger.debug(f"Session data: {dict(session)}")
         logger.debug(f"Cookies: {request.cookies}")
@@ -383,11 +383,11 @@ def google_callback():
         # Fetch token
         flow.fetch_token(authorization_response=request.url)
         
-        # Get user info
+        # Get user info from ID token
         credentials = flow.credentials
         user_info = id_token.verify_oauth2_token(
             credentials.id_token,
-            requests.Request(),
+            google_requests.Request(),
             client_id
         )
         
