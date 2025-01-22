@@ -133,13 +133,6 @@ def register():
 @auth.route('/login', methods=['GET', 'POST'])
 def login():
     """Handle user login."""
-    logger.debug(f"Login route called. Method: {request.method}, Args: {request.args}")
-    
-    # Check if Google login is requested
-    if request.method == 'GET' and request.args.get('provider') == 'google':
-        logger.info("Google login requested via provider parameter")
-        return redirect(url_for('auth.google_login'))
-    
     # Clear any existing session
     session.clear()
     
@@ -148,8 +141,6 @@ def login():
             email = request.form.get('email')
             password = request.form.get('password')
             remember = request.form.get('remember') == 'on'
-            
-            logger.debug(f"Login attempt for email: {email}")
             
             if not email or not password:
                 flash('Please provide both email and password.', 'error')
@@ -186,13 +177,10 @@ def google_login():
         logger.info("Starting Google OAuth flow")
         logger.debug(f"Request headers: {dict(request.headers)}")
         logger.debug(f"Request URL: {request.url}")
-        logger.debug(f"Request base URL: {request.base_url}")
         
         # Check if Google OAuth is configured
         client_id = current_app.config.get('GOOGLE_CLIENT_ID')
         client_secret = current_app.config.get('GOOGLE_CLIENT_SECRET')
-        logger.debug(f"Google Client ID configured: {bool(client_id)}")
-        logger.debug(f"Google Client Secret configured: {bool(client_secret)}")
         
         if not client_id or not client_secret:
             logger.error("Google OAuth credentials not configured")
@@ -213,77 +201,37 @@ def google_login():
         session['oauth_state_created'] = datetime.utcnow().isoformat()
         session.modified = True
         
-        logger.debug(f"Generated OAuth state: {state}")
-        logger.debug(f"Session data: {dict(session)}")
-        
-        # Create client config
-        client_config = {
-            "web": {
-                "client_id": client_id,
-                "client_secret": client_secret,
-                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                "token_uri": "https://oauth2.googleapis.com/token",
-                "redirect_uris": [
-                    "https://vidpoint.onrender.com/auth/google/callback",
-                    "http://vidpoint.onrender.com/auth/google/callback",
-                    "http://localhost:5000/auth/google/callback"
-                ],
-                "javascript_origins": [
-                    "https://vidpoint.onrender.com",
-                    "http://vidpoint.onrender.com",
-                    "http://localhost:5000"
-                ]
-            }
-        }
-        
-        logger.debug(f"Client config: {json.dumps(client_config, indent=2)}")
-        
         # Create flow
         flow = Flow.from_client_config(
-            client_config,
+            {
+                "web": {
+                    "client_id": client_id,
+                    "client_secret": client_secret,
+                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                    "token_uri": "https://oauth2.googleapis.com/token",
+                    "redirect_uris": [
+                        "https://vidpoint.onrender.com/auth/google/callback",
+                        "http://vidpoint.onrender.com/auth/google/callback",
+                        "http://localhost:5000/auth/google/callback"
+                    ]
+                }
+            },
             scopes=['openid', 'email', 'profile'],
             state=state
         )
         
-        # Set the redirect URI based on the request
-        if request.headers.get('X-Forwarded-Proto') == 'https':
-            actual_scheme = 'https'
-        else:
-            actual_scheme = 'http' if current_app.config['ENV'] != 'production' else 'https'
-            
-        flow.redirect_uri = url_for('auth.google_callback', _external=True, _scheme=actual_scheme)
-        logger.debug(f"Redirect URI: {flow.redirect_uri}")
+        # Set the redirect URI
+        flow.redirect_uri = url_for('auth.google_callback', _external=True, _scheme='https' if current_app.config['ENV'] == 'production' else 'http')
         
         # Generate authorization URL
         authorization_url, _ = flow.authorization_url(
             access_type='offline',
             include_granted_scopes='true',
-            prompt='consent',
-            hd='*'  # Allow any Google account
+            prompt='consent'
         )
         
-        logger.debug(f"Authorization URL: {authorization_url}")
-        
-        # Create response with redirect
-        response = redirect(authorization_url)
-        
-        # Ensure cookie is set properly
-        if hasattr(session, 'sid'):
-            max_age = int(current_app.permanent_session_lifetime.total_seconds())
-            response.set_cookie(
-                current_app.config['SESSION_COOKIE_NAME'],
-                session.sid,
-                max_age=max_age,
-                secure=current_app.config['SESSION_COOKIE_SECURE'],
-                httponly=True,
-                samesite='Lax'
-            )
-            logger.debug(f"Set session cookie: {session.sid}")
-            logger.debug(f"Response cookies: {response.headers.get('Set-Cookie')}")
-        else:
-            logger.warning("No session ID available")
-            
-        return response
+        logger.info(f"Redirecting to Google OAuth URL: {authorization_url}")
+        return redirect(authorization_url)
         
     except Exception as e:
         logger.error(f"Error in Google login: {str(e)}", exc_info=True)
