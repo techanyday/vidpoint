@@ -191,43 +191,18 @@ def google_login():
         logger.debug("Starting Google login flow")
         logger.debug(f"Current request URL: {request.url}")
         logger.debug(f"Initial session data: {dict(session)}")
-        logger.debug(f"Initial cookies: {request.cookies}")
         
-        # Ensure session is initialized properly
-        if not hasattr(session, 'sid'):
-            logger.error("Session not properly initialized")
-            flash('Unable to initialize session. Please try again.', 'error')
-            return redirect(url_for('auth.login'))
-            
         # Generate state
         state = secrets.token_urlsafe(32)
-        logger.debug(f"Generated state: {state}")
-        
-        # Store state in session
         session['oauth_state'] = state
         session['oauth_state_created'] = datetime.utcnow().isoformat()
         session.modified = True
         
-        logger.debug(f"Session after storing state: {dict(session)}")
-        
         # Create client config
-        client_id = current_app.config['GOOGLE_CLIENT_ID']
-        client_secret = current_app.config['GOOGLE_CLIENT_SECRET']
-        
-        # Get the actual scheme from the request
-        if request.headers.get('X-Forwarded-Proto') == 'https':
-            actual_scheme = 'https'
-        else:
-            actual_scheme = 'http' if os.environ.get('FLASK_ENV') != 'production' else 'https'
-            
-        # Construct the redirect URI using the actual scheme and host
-        redirect_uri = url_for('auth.google_callback', _external=True, _scheme=actual_scheme)
-        logger.debug(f"Redirect URI: {redirect_uri}")
-        
         client_config = {
             "web": {
-                "client_id": client_id,
-                "client_secret": client_secret,
+                "client_id": current_app.config['GOOGLE_CLIENT_ID'],
+                "client_secret": current_app.config['GOOGLE_CLIENT_SECRET'],
                 "auth_uri": "https://accounts.google.com/o/oauth2/auth",
                 "token_uri": "https://oauth2.googleapis.com/token",
                 "redirect_uris": [
@@ -249,13 +224,21 @@ def google_login():
             scopes=['openid', 'email', 'profile'],
             state=state
         )
-        flow.redirect_uri = redirect_uri
         
-        # Generate authorization URL with additional parameters
+        # Set the redirect URI based on the request
+        if request.headers.get('X-Forwarded-Proto') == 'https':
+            actual_scheme = 'https'
+        else:
+            actual_scheme = 'http' if current_app.config['ENV'] != 'production' else 'https'
+            
+        flow.redirect_uri = url_for('auth.google_callback', _external=True, _scheme=actual_scheme)
+        logger.debug(f"Redirect URI: {flow.redirect_uri}")
+        
+        # Generate authorization URL
         authorization_url, _ = flow.authorization_url(
-            access_type='offline',  # Enable refresh tokens
+            access_type='offline',
             include_granted_scopes='true',
-            prompt='consent',  # Force consent screen to ensure refresh token
+            prompt='consent',
             hd='*'  # Allow any Google account
         )
         
@@ -264,27 +247,18 @@ def google_login():
         # Create response with redirect
         response = redirect(authorization_url)
         
-        # Ensure cookie is set with proper max age
-        max_age = current_app.config.get('SESSION_COOKIE_AGE', 7 * 24 * 60 * 60)  # Default to 7 days
-        session_cookie = session.sid
-        
-        if not session_cookie:
-            logger.error("No session ID available")
-            flash('Session initialization failed. Please try again.', 'error')
-            return redirect(url_for('auth.login'))
+        # Ensure cookie is set properly
+        if hasattr(session, 'sid'):
+            max_age = int(current_app.permanent_session_lifetime.total_seconds())
+            response.set_cookie(
+                current_app.config['SESSION_COOKIE_NAME'],
+                session.sid,
+                max_age=max_age,
+                secure=current_app.config['SESSION_COOKIE_SECURE'],
+                httponly=True,
+                samesite='Lax'
+            )
             
-        response.set_cookie(
-            current_app.config['SESSION_COOKIE_NAME'],
-            session_cookie,
-            max_age=max_age,
-            secure=current_app.config['SESSION_COOKIE_SECURE'],
-            httponly=True,
-            samesite='Lax',
-            domain=None  # Allow the browser to set the cookie domain
-        )
-        
-        logger.debug(f"Response cookies: {response.headers.get('Set-Cookie')}")
-        
         return response
         
     except Exception as e:
