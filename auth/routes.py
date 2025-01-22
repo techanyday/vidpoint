@@ -231,24 +231,10 @@ def google_login():
         logger.debug(f"Current request URL: {request.url}")
         logger.debug(f"Initial session data: {dict(session)}")
         logger.debug(f"Initial cookies: {request.cookies}")
-
-        # Clear any existing session data and set permanent
+        
+        # Clear any existing session data
         session.clear()
         session.permanent = True
-        
-        # Verify OAuth configuration
-        client_id = os.environ.get('GOOGLE_CLIENT_ID')
-        client_secret = os.environ.get('GOOGLE_CLIENT_SECRET')
-        
-        if not client_id:
-            raise ValueError("Google Client ID not configured")
-        if not client_secret:
-            raise ValueError("Google Client Secret not configured")
-            
-        # Create client config
-        scheme = 'https' if os.environ.get('FLASK_ENV') == 'production' else 'http'
-        redirect_uri = url_for('auth.google_callback', _external=True, _scheme=scheme)
-        logger.debug(f"Redirect URI: {redirect_uri}")
         
         # Generate state
         state = secrets.token_urlsafe(32)
@@ -259,11 +245,26 @@ def google_login():
         session.modified = True
         
         logger.debug(f"Session after storing state: {dict(session)}")
-        logger.debug(f"Session permanent: {session.permanent}")
-        logger.debug(f"Session modified: {session.modified}")
-        logger.debug(f"Response cookies: {request.cookies}")
         
-        # Create flow with client config
+        # Create client config
+        client_id = os.environ.get('GOOGLE_CLIENT_ID')
+        client_secret = os.environ.get('GOOGLE_CLIENT_SECRET')
+        
+        if not client_id:
+            raise ValueError("Google Client ID not configured")
+        if not client_secret:
+            raise ValueError("Google Client Secret not configured")
+        
+        # Get the actual scheme from the request
+        if request.headers.get('X-Forwarded-Proto') == 'https':
+            actual_scheme = 'https'
+        else:
+            actual_scheme = 'http' if os.environ.get('FLASK_ENV') != 'production' else 'https'
+            
+        # Construct the redirect URI using the actual scheme and host
+        redirect_uri = url_for('auth.google_callback', _external=True, _scheme=actual_scheme)
+        logger.debug(f"Redirect URI: {redirect_uri}")
+        
         client_config = {
             "web": {
                 "client_id": client_id,
@@ -277,6 +278,7 @@ def google_login():
             }
         }
         
+        # Create flow
         flow = Flow.from_client_config(
             client_config,
             scopes=['openid', 'email', 'profile'],
@@ -295,6 +297,7 @@ def google_login():
         
         # Create response with redirect
         response = redirect(authorization_url)
+        
         # Ensure cookie is set with proper max age
         max_age = current_app.config.get('SESSION_COOKIE_AGE', 7 * 24 * 60 * 60)  # Default to 7 days
         response.set_cookie(
@@ -323,6 +326,8 @@ def google_callback():
         logger.debug(f"Request args: {request.args}")
         logger.debug(f"Session data: {dict(session)}")
         logger.debug(f"Cookies: {request.cookies}")
+        logger.debug(f"Request URL: {request.url}")
+        logger.debug(f"Request base URL: {request.base_url}")
 
         # Get state from request
         request_state = request.args.get('state')
@@ -355,9 +360,16 @@ def google_callback():
         
         if not client_id or not client_secret:
             raise ValueError("Google OAuth credentials not configured")
-            
-        scheme = 'https' if os.environ.get('FLASK_ENV') == 'production' else 'http'
-        redirect_uri = url_for('auth.google_callback', _external=True, _scheme=scheme)
+        
+        # Get the actual callback URL from the request
+        if request.headers.get('X-Forwarded-Proto') == 'https':
+            actual_scheme = 'https'
+        else:
+            actual_scheme = 'http' if os.environ.get('FLASK_ENV') != 'production' else 'https'
+        
+        # Construct the redirect URI using the actual scheme and host
+        redirect_uri = url_for('auth.google_callback', _external=True, _scheme=actual_scheme)
+        logger.debug(f"Constructed redirect URI: {redirect_uri}")
         
         client_config = {
             "web": {
@@ -376,12 +388,20 @@ def google_callback():
         flow = Flow.from_client_config(
             client_config,
             scopes=['openid', 'email', 'profile'],
-            state=request_state  # Use request state here
+            state=request_state
         )
         flow.redirect_uri = redirect_uri
         
+        # Log the authorization response URL
+        logger.debug(f"Authorization response URL: {request.url}")
+        logger.debug(f"Flow redirect URI: {flow.redirect_uri}")
+        
         # Fetch token
-        flow.fetch_token(authorization_response=request.url)
+        try:
+            flow.fetch_token(authorization_response=request.url)
+        except Exception as token_error:
+            logger.error(f"Error fetching token: {str(token_error)}", exc_info=True)
+            raise ValueError(f"Failed to fetch token: {str(token_error)}")
         
         # Get user info from ID token
         credentials = flow.credentials
