@@ -24,17 +24,7 @@ if os.environ.get('FLASK_ENV') == 'development':
     os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
 # Set up logging
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-
-# Enable OAuth logging
-logging.getLogger('oauthlib').setLevel(logging.DEBUG)
-logging.getLogger('google_auth_oauthlib').setLevel(logging.DEBUG)
-logging.getLogger('google.auth').setLevel(logging.DEBUG)
-logging.getLogger('requests_oauthlib').setLevel(logging.DEBUG)
-
+logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 def create_app():
@@ -48,12 +38,21 @@ def create_app():
     
     # Basic Flask config
     is_production = os.environ.get('FLASK_ENV') == 'production'
+    
+    # Set session directory
+    if is_production:
+        session_dir = '/tmp/flask_session'
+    else:
+        session_dir = os.path.join(os.path.dirname(__file__), 'flask_session')
+    
+    logger.debug(f"Using session directory: {session_dir}")
+    
     app.config.update(
         DEBUG=not is_production,
         GOOGLE_CLIENT_ID=os.environ.get('GOOGLE_CLIENT_ID'),
         GOOGLE_CLIENT_SECRET=os.environ.get('GOOGLE_CLIENT_SECRET'),
-        SESSION_TYPE='filesystem',  # Use filesystem-based session
-        SESSION_FILE_DIR=os.path.join(os.path.dirname(__file__), 'flask_session'),  # Store sessions in flask_session directory
+        SESSION_TYPE='filesystem',
+        SESSION_FILE_DIR=session_dir,
         SESSION_PERMANENT=True,
         PERMANENT_SESSION_LIFETIME=timedelta(days=7),
         SESSION_COOKIE_NAME='vidpoint_session',
@@ -63,11 +62,21 @@ def create_app():
         SESSION_REFRESH_EACH_REQUEST=True
     )
     
-    # Ensure session directory exists
-    os.makedirs(app.config['SESSION_FILE_DIR'], exist_ok=True)
+    # Ensure session directory exists and is writable
+    try:
+        os.makedirs(app.config['SESSION_FILE_DIR'], exist_ok=True)
+        test_file = os.path.join(app.config['SESSION_FILE_DIR'], 'test_write')
+        with open(test_file, 'w') as f:
+            f.write('test')
+        os.remove(test_file)
+        logger.debug("Successfully verified session directory is writable")
+    except Exception as e:
+        logger.error(f"Error with session directory: {str(e)}")
+        raise
     
     # Initialize Flask-Session
     Session(app)
+    logger.debug("Flask-Session initialized")
     
     # Load configuration
     app.config.update(
