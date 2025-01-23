@@ -20,10 +20,10 @@ steps:
       - '--set-env-vars'
       - >-
         GOOGLE_CLIENT_ID=888239351498-jiim27rd47dngpccc1ed2a9pd7c7m082.apps.googleusercontent.com,
-        GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET},
-        OPENAI_API_KEY=${OPENAI_API_KEY},
-        MONGODB_URI=${MONGODB_URI},
-        FLASK_SECRET_KEY=${FLASK_SECRET_KEY},
+        GOOGLE_CLIENT_SECRET=$${GOOGLE_CLIENT_SECRET},
+        OPENAI_API_KEY=$${OPENAI_API_KEY},
+        MONGODB_URI=$${MONGODB_URI},
+        FLASK_SECRET_KEY=$${FLASK_SECRET_KEY},
         SESSION_TYPE=redis,
         REDIS_URL=redis://localhost:6379
 

@@ -1,4 +1,4 @@
-runtime: python311
+runtime: python39
 
 instance_class: F1
 
@@ -30,6 +30,3 @@ handlers:
 
 vpc_access_connector:
   name: projects/vidpoint-411523/locations/us-central1/connectors/redis-connector
-
-includes:
-- secret.yaml  # Create this file for sensitive environment variables
