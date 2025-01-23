@@ -15,3 +15,5 @@ env/
 node_modules/
 render.yaml
 install_redis.ps1
+secret.yaml
+secret.yaml.template
