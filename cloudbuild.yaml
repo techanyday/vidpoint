@@ -32,14 +32,14 @@ options:
   logging: CLOUD_LOGGING_ONLY
 
 # Add required IAM permissions
-serviceAccount: 'projects/vidpoint/serviceAccounts/vidpoint@vidpoint.iam.gserviceaccount.com'
+serviceAccount: 'projects/vidpoint-411523/serviceAccounts/vidpoint@vidpoint-411523.iam.gserviceaccount.com'
 availableSecrets:
   secretManager:
-    - versionName: projects/vidpoint/secrets/GOOGLE_CLIENT_SECRET/versions/latest
+    - versionName: projects/vidpoint-411523/secrets/GOOGLE_CLIENT_SECRET/versions/latest
       env: 'GOOGLE_CLIENT_SECRET'
-    - versionName: projects/vidpoint/secrets/OPENAI_API_KEY/versions/latest
+    - versionName: projects/vidpoint-411523/secrets/OPENAI_API_KEY/versions/latest
       env: 'OPENAI_API_KEY'
-    - versionName: projects/vidpoint/secrets/MONGODB_URI/versions/latest
+    - versionName: projects/vidpoint-411523/secrets/MONGODB_URI/versions/latest
       env: 'MONGODB_URI'
-    - versionName: projects/vidpoint/secrets/FLASK_SECRET_KEY/versions/latest
+    - versionName: projects/vidpoint-411523/secrets/FLASK_SECRET_KEY/versions/latest
       env: 'FLASK_SECRET_KEY'
