@@ -6,19 +6,18 @@ steps:
     args:
       - '-c'
       - |
-        cat > app.yaml << EOF
-        runtime: python39
-        instance_class: F1
-        entrypoint: gunicorn -b :8080 app:app
-        env_variables:
-          GOOGLE_CLIENT_ID: "888239351498-jiim27rd47dngpccc1ed2a9pd7c7m082.apps.googleusercontent.com"
-          GOOGLE_CLIENT_SECRET: "$${GOOGLE_CLIENT_SECRET}"
-          OPENAI_API_KEY: "$${OPENAI_API_KEY}"
-          MONGODB_URI: "$${MONGODB_URI}"
-          FLASK_SECRET_KEY: "$${FLASK_SECRET_KEY}"
-          SESSION_TYPE: "redis"
-          REDIS_URL: "redis://localhost:6379"
-        EOF
+        echo "runtime: python39" > app.yaml
+        echo "instance_class: F1" >> app.yaml
+        echo "entrypoint: gunicorn -b :8080 app:app" >> app.yaml
+        echo "env_variables:" >> app.yaml
+        echo "  GOOGLE_CLIENT_ID: \"888239351498-jiim27rd47dngpccc1ed2a9pd7c7m082.apps.googleusercontent.com\"" >> app.yaml
+        echo "  GOOGLE_CLIENT_SECRET: \"$${GOOGLE_CLIENT_SECRET}\"" >> app.yaml
+        echo "  OPENAI_API_KEY: \"$${OPENAI_API_KEY}\"" >> app.yaml
+        echo "  MONGODB_URI: \"$${MONGODB_URI}\"" >> app.yaml
+        echo "  FLASK_SECRET_KEY: \"$${FLASK_SECRET_KEY}\"" >> app.yaml
+        echo "  SESSION_TYPE: \"redis\"" >> app.yaml
+        echo "  REDIS_URL: \"redis://localhost:6379\"" >> app.yaml
+        cat app.yaml
 
   # Install dependencies
   - name: 'python:3.9'
