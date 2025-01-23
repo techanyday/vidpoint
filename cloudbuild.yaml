@@ -8,7 +8,7 @@ steps:
         python -m venv /workspace/venv
         . /workspace/venv/bin/activate
         pip install --upgrade pip setuptools wheel
-        pip install -r requirements.txt
+        pip install -r requirements-minimal.txt
 
   # Deploy to App Engine with environment variables
   - name: 'gcr.io/cloud-builders/gcloud'
