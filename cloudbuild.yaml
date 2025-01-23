@@ -12,15 +12,15 @@ steps:
 
   # Deploy to App Engine
   - name: 'gcr.io/cloud-builders/gcloud'
-    secretEnv: ['GOOGLE_CLIENT_SECRET', 'OPENAI_API_KEY', 'MONGODB_URI', 'FLASK_SECRET_KEY']
+    secretEnv: ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'OPENAI_API_KEY', 'MONGODB_URI', 'FLASK_SECRET_KEY']
     env:
-      - 'GOOGLE_CLIENT_ID=888239351498-jiim27rd47dngpccc1ed2a9pd7c7m082.apps.googleusercontent.com'
       - 'SESSION_TYPE=redis'
       - 'REDIS_URL=redis://localhost:6379'
     entrypoint: 'bash'
     args:
       - '-c'
       - |
+        echo "$$GOOGLE_CLIENT_ID" > /workspace/_GOOGLE_CLIENT_ID
         echo "$$GOOGLE_CLIENT_SECRET" > /workspace/_GOOGLE_CLIENT_SECRET
         echo "$$OPENAI_API_KEY" > /workspace/_OPENAI_API_KEY
         echo "$$MONGODB_URI" > /workspace/_MONGODB_URI
@@ -28,7 +28,7 @@ steps:
         
         gcloud app deploy \
           --quiet \
-          --set-env-vars=^$$^GOOGLE_CLIENT_ID="$GOOGLE_CLIENT_ID" \
+          --set-env-vars=^$$^GOOGLE_CLIENT_ID="$$(cat /workspace/_GOOGLE_CLIENT_ID)" \
           --set-env-vars=^$$^GOOGLE_CLIENT_SECRET="$$(cat /workspace/_GOOGLE_CLIENT_SECRET)" \
           --set-env-vars=^$$^OPENAI_API_KEY="$$(cat /workspace/_OPENAI_API_KEY)" \
           --set-env-vars=^$$^MONGODB_URI="$$(cat /workspace/_MONGODB_URI)" \
@@ -42,6 +42,8 @@ options:
 
 availableSecrets:
   secretManager:
+    - versionName: projects/vidpoint-411523/secrets/GOOGLE_CLIENT_ID/versions/latest
+      env: 'GOOGLE_CLIENT_ID'
     - versionName: projects/vidpoint-411523/secrets/GOOGLE_CLIENT_SECRET/versions/latest
       env: 'GOOGLE_CLIENT_SECRET'
     - versionName: projects/vidpoint-411523/secrets/OPENAI_API_KEY/versions/latest
