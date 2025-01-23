@@ -7,7 +7,7 @@ steps:
       - |
         echo "runtime: python39" > app.yaml
         echo "instance_class: F1" >> app.yaml
-        echo "entrypoint: gunicorn -b :$PORT app:app" >> app.yaml
+        echo "entrypoint: gunicorn -b :8080 app:app" >> app.yaml
         echo "env_variables:" >> app.yaml
         echo "  GOOGLE_CLIENT_ID: \"888239351498-jiim27rd47dngpccc1ed2a9pd7c7m082.apps.googleusercontent.com\"" >> app.yaml
         echo "  GOOGLE_CLIENT_SECRET: \"$$(gcloud secrets versions access latest --secret=GOOGLE_CLIENT_SECRET)\"" >> app.yaml
