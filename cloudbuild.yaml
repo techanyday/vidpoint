@@ -1,0 +1,26 @@
+steps:
+  # Access secrets and create app.yaml
+  - name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        echo "env_variables:" > app.yaml
+        echo "  GOOGLE_CLIENT_ID: \"888239351498-jiim27rd47dngpccc1ed2a9pd7c7m082.apps.googleusercontent.com\"" >> app.yaml
+        echo "  GOOGLE_CLIENT_SECRET: \"$$(gcloud secrets versions access latest --secret=GOOGLE_CLIENT_SECRET)\"" >> app.yaml
+        echo "  OPENAI_API_KEY: \"$$(gcloud secrets versions access latest --secret=OPENAI_API_KEY)\"" >> app.yaml
+        echo "  MONGODB_URI: \"$$(gcloud secrets versions access latest --secret=MONGODB_URI)\"" >> app.yaml
+        echo "  FLASK_SECRET_KEY: \"$$(gcloud secrets versions access latest --secret=FLASK_SECRET_KEY)\"" >> app.yaml
+        echo "  SESSION_TYPE: \"redis\"" >> app.yaml
+        echo "  REDIS_URL: \"redis://localhost:6379\"" >> app.yaml
+        
+  # Install dependencies
+  - name: 'python:3.9'
+    entrypoint: pip
+    args: ['install', '-r', 'requirements.txt', '-t', '/workspace/lib']
+
+  # Deploy to App Engine
+  - name: 'gcr.io/cloud-builders/gcloud'
+    args: ['app', 'deploy']
+
+timeout: '1600s'
