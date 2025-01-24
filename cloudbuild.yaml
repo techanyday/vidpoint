@@ -17,6 +17,7 @@ steps:
     args:
       - '-c'
       - |
+        # Create app.yaml with literal $PORT (will not be substituted)
         cat > app.yaml << 'EOF'
         runtime: python39
         instance_class: F1
@@ -26,7 +27,7 @@ steps:
           min_instances: 1
           max_instances: 10
         
-        entrypoint: gunicorn -b :$PORT app:app
+        entrypoint: gunicorn -b :'$$PORT' app:app
         
         env_variables:
           FLASK_ENV: "production"
@@ -53,7 +54,12 @@ steps:
           name: projects/vidpoint/locations/us-central1/connectors/redis-connector
         EOF
         
-        # Replace variables in app.yaml
+        # Replace secret variables in app.yaml
+        export GOOGLE_CLIENT_ID="$$GOOGLE_CLIENT_ID"
+        export GOOGLE_CLIENT_SECRET="$$GOOGLE_CLIENT_SECRET"
+        export OPENAI_API_KEY="$$OPENAI_API_KEY"
+        export MONGODB_URI="$$MONGODB_URI"
+        export FLASK_SECRET_KEY="$$FLASK_SECRET_KEY"
         envsubst < app.yaml > app.yaml.tmp && mv app.yaml.tmp app.yaml
         
         # Deploy
