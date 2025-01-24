@@ -28,13 +28,14 @@ steps:
         
         gcloud app deploy \
           --quiet \
-          --set-env-vars=^$$^GOOGLE_CLIENT_ID="$$(cat /workspace/_GOOGLE_CLIENT_ID)" \
-          --set-env-vars=^$$^GOOGLE_CLIENT_SECRET="$$(cat /workspace/_GOOGLE_CLIENT_SECRET)" \
-          --set-env-vars=^$$^OPENAI_API_KEY="$$(cat /workspace/_OPENAI_API_KEY)" \
-          --set-env-vars=^$$^MONGODB_URI="$$(cat /workspace/_MONGODB_URI)" \
-          --set-env-vars=^$$^FLASK_SECRET_KEY="$$(cat /workspace/_FLASK_SECRET_KEY)" \
-          --set-env-vars=^$$^SESSION_TYPE="$SESSION_TYPE" \
-          --set-env-vars=^$$^REDIS_URL="$REDIS_URL"
+          --set-env-vars \
+          GOOGLE_CLIENT_ID="$$(cat /workspace/_GOOGLE_CLIENT_ID)",\
+          GOOGLE_CLIENT_SECRET="$$(cat /workspace/_GOOGLE_CLIENT_SECRET)",\
+          OPENAI_API_KEY="$$(cat /workspace/_OPENAI_API_KEY)",\
+          MONGODB_URI="$$(cat /workspace/_MONGODB_URI)",\
+          FLASK_SECRET_KEY="$$(cat /workspace/_FLASK_SECRET_KEY)",\
+          SESSION_TYPE=redis,\
+          REDIS_URL=redis://localhost:6379
 
 timeout: '1600s'
 options:
