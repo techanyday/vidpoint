@@ -1,6 +1,6 @@
 steps:
   # Set up Python virtual environment and install dependencies
-  - name: 'python:3.9'
+  - name: 'python:3.11'
     entrypoint: bash
     args:
       - '-c'
@@ -8,7 +8,7 @@ steps:
         python -m venv /workspace/venv
         . /workspace/venv/bin/activate
         pip install --upgrade pip setuptools wheel
-        pip install -r requirements-minimal.txt
+        pip install -r requirements-minimal.txt --no-cache-dir
 
   # Deploy to App Engine
   - name: 'gcr.io/cloud-builders/gcloud'
