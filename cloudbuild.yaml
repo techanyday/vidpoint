@@ -33,14 +33,12 @@ steps:
           FLASK_ENV: "production"
           FLASK_APP: "app.py"
           PYTHONUNBUFFERED: "1"
-          GOOGLE_CLIENT_ID: "$${GOOGLE_CLIENT_ID}"
-          GOOGLE_CLIENT_SECRET: "$${GOOGLE_CLIENT_SECRET}"
-          OPENAI_API_KEY: "$${OPENAI_API_KEY}"
-          MONGODB_URI: "$${MONGODB_URI}"
-          FLASK_SECRET_KEY: "$${FLASK_SECRET_KEY}"
           SESSION_TYPE: "redis"
           REDIS_URL: "redis://localhost:6379"
           PORT: "8080"
+        
+        includes:
+        - secrets.yaml
         
         handlers:
         - url: /static
@@ -53,6 +51,16 @@ steps:
         
         vpc_access_connector:
           name: projects/vidpoint/locations/us-central1/connectors/redis-connector
+        EOF
+        
+        # Create secrets.yaml with environment variables
+        cat > secrets.yaml << EOF
+        env_variables:
+          GOOGLE_CLIENT_ID: "$GOOGLE_CLIENT_ID"
+          GOOGLE_CLIENT_SECRET: "$GOOGLE_CLIENT_SECRET"
+          OPENAI_API_KEY: "$OPENAI_API_KEY"
+          MONGODB_URI: "$MONGODB_URI"
+          FLASK_SECRET_KEY: "$FLASK_SECRET_KEY"
         EOF
         
         # Deploy
