@@ -12,18 +12,17 @@ steps:
 
   # Deploy to App Engine
   - name: 'gcr.io/cloud-builders/gcloud'
-    secretEnv: ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'OPENAI_API_KEY', 'MONGODB_URI', 'FLASK_SECRET_KEY']
     entrypoint: bash
+    env:
+      - 'SESSION_TYPE=redis'
+      - 'REDIS_URL=redis://localhost:6379'
+      - 'PORT=8080'
+      - 'FLASK_ENV=production'
+      - 'FLASK_APP=app.py'
+      - 'PYTHONUNBUFFERED=1'
     args:
       - '-c'
       - |
-        # Write secrets to a temporary env file
-        echo "GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID" > /workspace/env.yaml
-        echo "GOOGLE_CLIENT_SECRET=$GOOGLE_CLIENT_SECRET" >> /workspace/env.yaml
-        echo "OPENAI_API_KEY=$OPENAI_API_KEY" >> /workspace/env.yaml
-        echo "MONGODB_URI=$MONGODB_URI" >> /workspace/env.yaml
-        echo "FLASK_SECRET_KEY=$FLASK_SECRET_KEY" >> /workspace/env.yaml
-        
         # Create app.yaml
         cat > app.yaml << EOF
         runtime: python39
@@ -37,12 +36,17 @@ steps:
         entrypoint: gunicorn -b :8080 app:app
         
         env_variables:
-          FLASK_ENV: "production"
-          FLASK_APP: "app.py"
-          PYTHONUNBUFFERED: "1"
-          SESSION_TYPE: "redis"
-          REDIS_URL: "redis://localhost:6379"
-          PORT: "8080"
+          FLASK_ENV: ${FLASK_ENV}
+          FLASK_APP: ${FLASK_APP}
+          PYTHONUNBUFFERED: ${PYTHONUNBUFFERED}
+          GOOGLE_CLIENT_ID: ${_GOOGLE_CLIENT_ID}
+          GOOGLE_CLIENT_SECRET: ${_GOOGLE_CLIENT_SECRET}
+          OPENAI_API_KEY: ${_OPENAI_API_KEY}
+          MONGODB_URI: ${_MONGODB_URI}
+          FLASK_SECRET_KEY: ${_FLASK_SECRET_KEY}
+          SESSION_TYPE: ${SESSION_TYPE}
+          REDIS_URL: ${REDIS_URL}
+          PORT: ${PORT}
         
         handlers:
         - url: /static
@@ -57,12 +61,19 @@ steps:
           name: projects/vidpoint/locations/us-central1/connectors/redis-connector
         EOF
         
-        # Deploy with env vars from file
-        gcloud app deploy --quiet --env-vars-file=/workspace/env.yaml
+        # Deploy
+        gcloud app deploy --quiet
 
 timeout: '1600s'
 options:
   logging: CLOUD_LOGGING_ONLY
+
+substitutions:
+  _GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+  _GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+  _OPENAI_API_KEY: ${OPENAI_API_KEY}
+  _MONGODB_URI: ${MONGODB_URI}
+  _FLASK_SECRET_KEY: ${FLASK_SECRET_KEY}
 
 availableSecrets:
   secretManager:
