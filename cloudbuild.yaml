@@ -13,13 +13,6 @@ steps:
   # Deploy to App Engine
   - name: 'gcr.io/cloud-builders/gcloud'
     entrypoint: bash
-    env:
-      - 'SESSION_TYPE=redis'
-      - 'REDIS_URL=redis://localhost:6379'
-      - 'PORT=8080'
-      - 'FLASK_ENV=production'
-      - 'FLASK_APP=app.py'
-      - 'PYTHONUNBUFFERED=1'
     args:
       - '-c'
       - |
@@ -36,17 +29,17 @@ steps:
         entrypoint: gunicorn -b :8080 app:app
         
         env_variables:
-          FLASK_ENV: ${FLASK_ENV}
-          FLASK_APP: ${FLASK_APP}
-          PYTHONUNBUFFERED: ${PYTHONUNBUFFERED}
+          FLASK_ENV: ${_FLASK_ENV}
+          FLASK_APP: ${_FLASK_APP}
+          PYTHONUNBUFFERED: ${_PYTHONUNBUFFERED}
           GOOGLE_CLIENT_ID: ${_GOOGLE_CLIENT_ID}
           GOOGLE_CLIENT_SECRET: ${_GOOGLE_CLIENT_SECRET}
           OPENAI_API_KEY: ${_OPENAI_API_KEY}
           MONGODB_URI: ${_MONGODB_URI}
           FLASK_SECRET_KEY: ${_FLASK_SECRET_KEY}
-          SESSION_TYPE: ${SESSION_TYPE}
-          REDIS_URL: ${REDIS_URL}
-          PORT: ${PORT}
+          SESSION_TYPE: ${_SESSION_TYPE}
+          REDIS_URL: ${_REDIS_URL}
+          PORT: ${_PORT}
         
         handlers:
         - url: /static
@@ -69,6 +62,12 @@ options:
   logging: CLOUD_LOGGING_ONLY
 
 substitutions:
+  _FLASK_ENV: "production"
+  _FLASK_APP: "app.py"
+  _PYTHONUNBUFFERED: "1"
+  _SESSION_TYPE: "redis"
+  _REDIS_URL: "redis://localhost:6379"
+  _PORT: "8080"
   _GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
   _GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
   _OPENAI_API_KEY: ${OPENAI_API_KEY}
