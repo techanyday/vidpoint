@@ -13,6 +13,7 @@ steps:
   # Deploy to App Engine
   - name: 'gcr.io/cloud-builders/gcloud'
     entrypoint: bash
+    secretEnv: ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'OPENAI_API_KEY', 'MONGODB_URI', 'FLASK_SECRET_KEY']
     args:
       - '-c'
       - |
@@ -32,11 +33,11 @@ steps:
           FLASK_ENV: ${_FLASK_ENV}
           FLASK_APP: ${_FLASK_APP}
           PYTHONUNBUFFERED: ${_PYTHONUNBUFFERED}
-          GOOGLE_CLIENT_ID: ${_GOOGLE_CLIENT_ID}
-          GOOGLE_CLIENT_SECRET: ${_GOOGLE_CLIENT_SECRET}
-          OPENAI_API_KEY: ${_OPENAI_API_KEY}
-          MONGODB_URI: ${_MONGODB_URI}
-          FLASK_SECRET_KEY: ${_FLASK_SECRET_KEY}
+          GOOGLE_CLIENT_ID: "$$GOOGLE_CLIENT_ID"
+          GOOGLE_CLIENT_SECRET: "$$GOOGLE_CLIENT_SECRET"
+          OPENAI_API_KEY: "$$OPENAI_API_KEY"
+          MONGODB_URI: "$$MONGODB_URI"
+          FLASK_SECRET_KEY: "$$FLASK_SECRET_KEY"
           SESSION_TYPE: ${_SESSION_TYPE}
           REDIS_URL: ${_REDIS_URL}
           PORT: ${_PORT}
@@ -68,11 +69,6 @@ substitutions:
   _SESSION_TYPE: "redis"
   _REDIS_URL: "redis://localhost:6379"
   _PORT: "8080"
-  _GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
-  _GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
-  _OPENAI_API_KEY: ${OPENAI_API_KEY}
-  _MONGODB_URI: ${MONGODB_URI}
-  _FLASK_SECRET_KEY: ${FLASK_SECRET_KEY}
 
 availableSecrets:
   secretManager:
