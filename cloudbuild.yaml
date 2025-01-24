@@ -10,14 +10,13 @@ steps:
         pip install --upgrade pip setuptools wheel
         pip install -r requirements-minimal.txt
 
-  # Create app.yaml and deploy
-  - name: 'gcr.io/cloud-builders/gcloud'
-    secretEnv: ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'OPENAI_API_KEY', 'MONGODB_URI', 'FLASK_SECRET_KEY']
-    entrypoint: 'bash'
+  # Create app.yaml
+  - name: 'ubuntu'
     args:
-      - '-c'
+      - bash
+      - -c
       - |
-        cat > app.yaml << EOL
+        cat > app.yaml << 'EOF'
         runtime: python39
         instance_class: F1
         
@@ -32,11 +31,11 @@ steps:
           FLASK_ENV: "production"
           FLASK_APP: "app.py"
           PYTHONUNBUFFERED: "1"
-          GOOGLE_CLIENT_ID: "$$GOOGLE_CLIENT_ID"
-          GOOGLE_CLIENT_SECRET: "$$GOOGLE_CLIENT_SECRET"
-          OPENAI_API_KEY: "$$OPENAI_API_KEY"
-          MONGODB_URI: "$$MONGODB_URI"
-          FLASK_SECRET_KEY: "$$FLASK_SECRET_KEY"
+          GOOGLE_CLIENT_ID: "$_GOOGLE_CLIENT_ID"
+          GOOGLE_CLIENT_SECRET: "$_GOOGLE_CLIENT_SECRET"
+          OPENAI_API_KEY: "$_OPENAI_API_KEY"
+          MONGODB_URI: "$_MONGODB_URI"
+          FLASK_SECRET_KEY: "$_FLASK_SECRET_KEY"
           SESSION_TYPE: "redis"
           REDIS_URL: "redis://localhost:6379"
           PORT: "8080"
@@ -52,14 +51,23 @@ steps:
         
         vpc_access_connector:
           name: projects/vidpoint/locations/us-central1/connectors/redis-connector
-        EOL
-        
-        # Deploy
-        gcloud app deploy --quiet
+        EOF
+
+  # Deploy to App Engine
+  - name: 'gcr.io/cloud-builders/gcloud'
+    secretEnv: ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'OPENAI_API_KEY', 'MONGODB_URI', 'FLASK_SECRET_KEY']
+    args: ['app', 'deploy', '--quiet']
 
 timeout: '1600s'
 options:
   logging: CLOUD_LOGGING_ONLY
+
+substitutions:
+  _GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+  _GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+  _OPENAI_API_KEY: ${OPENAI_API_KEY}
+  _MONGODB_URI: ${MONGODB_URI}
+  _FLASK_SECRET_KEY: ${FLASK_SECRET_KEY}
 
 availableSecrets:
   secretManager:
