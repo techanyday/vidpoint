@@ -17,9 +17,7 @@ steps:
     args:
       - '-c'
       - |
-        # Create app.yaml
-        cat > app.yaml << 'EOF'
-        runtime: python39
+        echo "runtime: python39
         instance_class: F1
         
         automatic_scaling:
@@ -30,17 +28,17 @@ steps:
         entrypoint: gunicorn -b :8080 app:app
         
         env_variables:
-          FLASK_ENV: "production"
-          FLASK_APP: "app.py"
-          PYTHONUNBUFFERED: "1"
-          GOOGLE_CLIENT_ID: '"'"'$$GOOGLE_CLIENT_ID'"'"'
-          GOOGLE_CLIENT_SECRET: '"'"'$$GOOGLE_CLIENT_SECRET'"'"'
-          OPENAI_API_KEY: '"'"'$$OPENAI_API_KEY'"'"'
-          MONGODB_URI: '"'"'$$MONGODB_URI'"'"'
-          FLASK_SECRET_KEY: '"'"'$$FLASK_SECRET_KEY'"'"'
-          SESSION_TYPE: "redis"
-          REDIS_URL: "redis://localhost:6379"
-          PORT: "8080"
+          FLASK_ENV: production
+          FLASK_APP: app.py
+          PYTHONUNBUFFERED: 1
+          GOOGLE_CLIENT_ID: $${GOOGLE_CLIENT_ID}
+          GOOGLE_CLIENT_SECRET: $${GOOGLE_CLIENT_SECRET}
+          OPENAI_API_KEY: $${OPENAI_API_KEY}
+          MONGODB_URI: $${MONGODB_URI}
+          FLASK_SECRET_KEY: $${FLASK_SECRET_KEY}
+          SESSION_TYPE: redis
+          REDIS_URL: redis://localhost:6379
+          PORT: 8080
         
         handlers:
         - url: /static
@@ -52,10 +50,8 @@ steps:
           secure: always
         
         vpc_access_connector:
-          name: projects/vidpoint/locations/us-central1/connectors/redis-connector
-        EOF
+          name: projects/vidpoint/locations/us-central1/connectors/redis-connector" > app.yaml
         
-        # Deploy
         gcloud app deploy --quiet
 
 timeout: '1600s'
