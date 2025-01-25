@@ -1,16 +1,12 @@
 steps:
-  # Install system dependencies
-  - name: 'ubuntu'
-    args: ['bash', '-c', 'apt-get update && apt-get install -y ffmpeg']
-
-  # Install dependencies
+  # Install Python dependencies
   - name: 'python:3.11'
     entrypoint: python
     args: ['-m', 'pip', 'install', '--upgrade', 'pip', 'setuptools', 'wheel']
 
   - name: 'python:3.11'
     entrypoint: python
-    args: ['-m', 'pip', 'install', '-r', 'requirements-app.txt', '--target', '.', '--use-pep517']
+    args: ['-m', 'pip', 'install', '-r', 'requirements-app.txt', '--target', '.']
 
   # Deploy to App Engine
   - name: 'gcr.io/cloud-builders/gcloud'
