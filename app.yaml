@@ -10,11 +10,11 @@ automatic_scaling:
 entrypoint: gunicorn -b :8080 app:app
 
 env_variables:
-  FLASK_ENV: production
-  FLASK_APP: app.py
+  FLASK_ENV: "production"
+  FLASK_APP: "app.py"
   PYTHONUNBUFFERED: "1"
-  SESSION_TYPE: redis
-  REDIS_URL: redis://localhost:6379
+  SESSION_TYPE: "redis"
+  REDIS_URL: "redis://localhost:6379"
   PORT: "8080"
 
 handlers:
@@ -25,6 +25,28 @@ handlers:
 - url: /.*
   script: auto
   secure: always
+
+libraries:
+  - name: ssl
+    version: latest
+
+requirements:
+  - Flask>=2.0.0,<3.0.0
+  - Werkzeug>=2.0.0,<3.0.0
+  - gunicorn>=20.1.0
+  - google-auth>=2.0.0
+  - google-auth-oauthlib>=0.4.0
+  - google-auth-httplib2>=0.1.0
+  - requests>=2.25.0
+  - python-dotenv>=0.19.0
+  - pymongo>=4.0.0
+  - redis>=4.0.0
+  - openai>=0.27.0
+  - python-jose>=3.3.0
+  - Flask-Session>=0.4.0
+  - click>=7.0.0
+  - itsdangerous>=2.0.0
+  - Jinja2>=2.11.0
 
 vpc_access_connector:
   name: projects/vidpoint/locations/us-central1/connectors/redis-connector
