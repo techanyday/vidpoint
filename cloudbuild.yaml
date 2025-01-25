@@ -1,4 +1,8 @@
 steps:
+  # Install system dependencies
+  - name: 'ubuntu'
+    args: ['bash', '-c', 'apt-get update && apt-get install -y ffmpeg']
+
   # Install dependencies
   - name: 'python:3.11'
     entrypoint: python
